@@ -9,22 +9,13 @@ export async function POST(req: NextRequest) {
   const { day, leads, config }: { day: number; leads: Lead[]; config: SimulatorConfig } = body;
 
   if (MOCK) {
-    const allActions: ReturnType<typeof actionsForLeadOnDay>[] = [];
     const leadUpdates: Record<string, Partial<Lead>> = {};
-
-    for (const lead of leads) {
-      const result = actionsForLeadOnDay(lead, day, config, leads);
-      allActions.push(result);
-      if (Object.keys(result.leadUpdates).length > 0) {
-        leadUpdates[lead.id] = result.leadUpdates;
-      }
-    }
-
-    return NextResponse.json({
-      day,
-      actions: allActions.flatMap(r => r.actions),
-      leadUpdates,
+    const allActions = leads.flatMap(lead => {
+      const result = actionsForLeadOnDay(lead, day, config);
+      if (Object.keys(result.leadUpdates).length > 0) leadUpdates[lead.id] = result.leadUpdates;
+      return result.actions;
     });
+    return NextResponse.json({ day, actions: allActions, leadUpdates });
   }
 
   try {
@@ -41,13 +32,12 @@ export async function POST(req: NextRequest) {
     );
     return NextResponse.json(await res.json());
   } catch {
-    // fallback
-    const allActions = leads.flatMap(l => actionsForLeadOnDay(l, day, config, leads).actions);
     const leadUpdates: Record<string, Partial<Lead>> = {};
-    for (const lead of leads) {
-      const r = actionsForLeadOnDay(lead, day, config, leads);
+    const allActions = leads.flatMap(lead => {
+      const r = actionsForLeadOnDay(lead, day, config);
       if (Object.keys(r.leadUpdates).length) leadUpdates[lead.id] = r.leadUpdates;
-    }
+      return r.actions;
+    });
     return NextResponse.json({ day, actions: allActions, leadUpdates });
   }
 }

@@ -5,17 +5,54 @@ let _idCounter = 0;
 function uid() { return `a${Date.now()}${++_idCounter}`; }
 function ts() { return new Date().toISOString(); }
 
-// Returns all actions that fire for a given lead on a given absolute day
+// Deterministic pseudo-random from lead ID + salt — same lead always gets same story
+function seeded(leadId: string, salt: string): number {
+  const str = leadId + salt;
+  let hash = 0;
+  for (const c of str) hash = ((hash << 5) - hash) + c.charCodeAt(0);
+  return (Math.abs(hash) % 10000) / 10000; // 0–1
+}
+
+interface LeadStory {
+  staffCallDay: number | null;
+  customerReplyDay: number | null;
+  meetingDay: number | null;
+  closeDay: number | null;
+}
+
+function getStory(lead: Lead): LeadStory {
+  if (lead.score >= 7) {
+    const replyRel = 2 + Math.floor(seeded(lead.id, 'reply') * 3); // rel 2, 3, or 4
+    return {
+      staffCallDay: 2,
+      customerReplyDay: replyRel,
+      meetingDay: replyRel,
+      closeDay: replyRel + 2,
+    };
+  } else if (lead.score >= 4) {
+    const replies = seeded(lead.id, 'replies') < 0.6;
+    const closes = replies && seeded(lead.id, 'closes') < 0.5;
+    const replyRel = 4 + Math.floor(seeded(lead.id, 'reply') * 4); // rel 4, 5, 6, or 7
+    return {
+      staffCallDay: 3,
+      customerReplyDay: replies ? replyRel : null,
+      meetingDay: closes ? replyRel : null,
+      closeDay: closes ? replyRel + 2 : null,
+    };
+  } else {
+    return { staffCallDay: null, customerReplyDay: null, meetingDay: null, closeDay: null };
+  }
+}
+
 export function actionsForLeadOnDay(
   lead: Lead,
   day: number,
   config: SimulatorConfig,
-  allLeads: Lead[]
 ): { actions: Action[]; leadUpdates: Partial<Lead> } {
-  const rel = day - lead.registeredOnDay; // days since this lead registered
+  const rel = day - lead.registeredOnDay;
   const actions: Action[] = [];
   const updates: Partial<Lead> = {};
-
+  const story = getStory(lead);
   const freq = config.reminders.frequencyDays;
   const maxR = config.reminders.maxReminders;
 
@@ -31,6 +68,7 @@ export function actionsForLeadOnDay(
     updates.classification = classification;
     updates.status = 'Contacted';
     updates.lastActionDay = day;
+    updates.nextReminderDay = day + freq;
 
     actions.push({
       id: uid(), day, type: 'email_sent', leadId: lead.id, leadName: lead.name,
@@ -56,29 +94,10 @@ export function actionsForLeadOnDay(
       id: uid(), day, type: 'rep_assigned', leadId: lead.id, leadName: lead.name,
       actor: 'team',
       summary: `${lead.assignedRep} assigned to ${lead.name}`,
-      detail: { rep: lead.assignedRep, note: `Assigned based on availability. ${classification} lead — ${score}/10.` },
+      detail: { rep: lead.assignedRep, note: `${classification} lead — ${score}/10. Assigned based on availability.` },
       timestamp: ts(),
     });
 
-    if (score >= 7) {
-      actions.push({
-        id: uid(), day, type: 'slack_alert', leadId: lead.id, leadName: lead.name,
-        actor: 'system',
-        summary: `🔥 Hot lead alert: ${lead.name} (${score}/10)`,
-        detail: { channel: '#sales-alerts', message: `🔥 Hot lead captured: *${lead.name}* — score ${score}/10. Budget $${lead.formInputs.budget}, timeline ${lead.formInputs.timelineDays} days. Assigned to ${lead.assignedRep}. Act fast.` },
-        timestamp: ts(),
-      });
-    } else if (score < 4) {
-      actions.push({
-        id: uid(), day, type: 'slack_alert', leadId: lead.id, leadName: lead.name,
-        actor: 'system',
-        summary: `🔵 Cold lead flagged: ${lead.name} (${score}/10)`,
-        detail: { channel: '#sales-alerts', message: `🔵 Low-priority lead: *${lead.name}* — score ${score}/10. Auto follow-up sequence started. No immediate action needed.` },
-        timestamp: ts(),
-      });
-    }
-
-    // Rep sends proposal on Day+1 for hot/warm leads
     if (score >= 4) {
       actions.push({
         id: uid(), day, type: 'proposal_sent', leadId: lead.id, leadName: lead.name,
@@ -87,61 +106,80 @@ export function actionsForLeadOnDay(
         detail: {
           rep: lead.assignedRep,
           subject: 'Project Proposal — CloseIt Automation',
-          body: `Hi ${lead.name},\n\nGreat to connect! I've put together a quick scope based on your brief:\n\n• Budget: $${lead.formInputs.budget}\n• Timeline: ${lead.formInputs.timelineDays} days\n• Recommended package: AI Lead Automation Suite\n\nLet me know if you'd like to adjust scope or book a call to walk through it.\n\n— ${lead.assignedRep}`,
+          body: `Hi ${lead.name},\n\nGreat to connect! Here's a quick scope based on your brief:\n\n• Budget: $${lead.formInputs.budget}\n• Timeline: ${lead.formInputs.timelineDays} days\n• Recommended package: AI Lead Automation Suite\n\nLet me know if you'd like to jump on a call.\n\n— ${lead.assignedRep}`,
         },
         timestamp: ts(),
       });
     }
-
-    updates.nextReminderDay = day + freq;
   }
 
-  // --- Relative Day +3: Scripted customer reply for first lead (Hot path) ---
-  // We identify the "hot path" lead as the one with score >= 7 and lowest registeredOnDay
-  const hotLead = [...allLeads]
-    .filter(l => l.score >= 7)
-    .sort((a, b) => a.registeredOnDay - b.registeredOnDay)[0];
+  // --- Staff call log (warm/hot leads, seeded day) ---
+  if (story.staffCallDay !== null && rel === story.staffCallDay &&
+      !['Closed Won', 'Closed Lost', 'Nurture'].includes(lead.status)) {
+    actions.push({
+      id: uid(), day, type: 'call_logged', leadId: lead.id, leadName: lead.name,
+      actor: 'team',
+      summary: `${lead.assignedRep} called ${lead.name} — left voicemail`,
+      detail: {
+        rep: lead.assignedRep,
+        notes: `Called ${lead.name} to follow up on proposal. No answer — left voicemail. Will track email response.`,
+      },
+      timestamp: ts(),
+    });
+  }
 
-  const warmLead = [...allLeads]
-    .filter(l => l.score >= 4 && l.score < 7)
-    .sort((a, b) => a.registeredOnDay - b.registeredOnDay)[0];
+  // --- Customer reply (seeded day per lead) ---
+  const alreadyReplied = ['Replied', 'Meeting Scheduled', 'Closed Won', 'Nurture'].includes(lead.status);
 
-  if (hotLead && lead.id === hotLead.id && rel === 3) {
-    updates.status = 'Replied';
+  if (story.customerReplyDay !== null && rel === story.customerReplyDay && !alreadyReplied) {
+    const isHot = lead.score >= 7;
+    const replySummary = isHot
+      ? `${lead.name} replied: "Ready to move — can we jump on a call?"`
+      : `${lead.name} replied: "Interested but swamped — follow up next week"`;
+    const replyBody = isHot
+      ? `Hi! This looks exactly like what we need. Can we schedule a call this week? We're ready to move fast on this.`
+      : `Hey, I'm interested but things are hectic right now. Can you follow up with me in a week or so?`;
+
     actions.push({
       id: uid(), day, type: 'reply_received', leadId: lead.id, leadName: lead.name,
       actor: 'customer',
-      summary: `${lead.name} replied: "Ready to move — can we jump on a call?"`,
-      detail: { from: lead.email, body: `Hi! This looks exactly like what we need. Can we schedule a call this week? We're ready to move fast on this.` },
+      summary: replySummary,
+      detail: { from: lead.email, body: replyBody },
       timestamp: ts(),
     });
+
+    const aiReplyBody = isHot
+      ? `Hi ${lead.name},\n\nAbsolutely — I've sent a booking link below. Looking forward to connecting and getting things moving.\n\n— ${lead.assignedRep} (via CloseIt AI)`
+      : `Understood ${lead.name} — no rush at all. I'll check back in a week. In the meantime, here's a quick overview of what we'd build for you.\n\n— ${lead.assignedRep} (via CloseIt AI)`;
+
     actions.push({
       id: uid(), day, type: 'email_sent', leadId: lead.id, leadName: lead.name,
       actor: 'ai',
       summary: `AI drafted reply sent to ${lead.name}`,
-      detail: { subject: 'Re: Project Proposal', body: `Hi ${lead.name},\n\nAbsolutely — I've sent a booking link below. Looking forward to connecting and getting things moving.\n\n— ${lead.assignedRep} (via CloseIt AI)` },
+      detail: { subject: 'Re: Project Proposal', body: aiReplyBody },
       timestamp: ts(),
     });
-    actions.push({
-      id: uid(), day, type: 'meeting_scheduled', leadId: lead.id, leadName: lead.name,
-      actor: 'system',
-      summary: `Discovery call booked with ${lead.name}`,
-      detail: { date: `Day ${day + 1}`, duration: '30 min', rep: lead.assignedRep, nudge: true },
-      timestamp: ts(),
-    });
-    actions.push({
-      id: uid(), day, type: 'slack_alert', leadId: lead.id, leadName: lead.name,
-      actor: 'system',
-      summary: `📅 Meeting booked — ${lead.name}`,
-      detail: { channel: '#sales-alerts', message: `📅 Meeting booked with *${lead.name}*. Day ${day + 1}. ${lead.assignedRep} — prep your deck.` },
-      timestamp: ts(),
-    });
-    updates.status = 'Meeting Scheduled';
-    updates.nextReminderDay = null;
+
+    if (story.meetingDay === rel) {
+      actions.push({
+        id: uid(), day, type: 'meeting_scheduled', leadId: lead.id, leadName: lead.name,
+        actor: 'system',
+        summary: `Discovery call booked with ${lead.name}`,
+        detail: { date: `Day ${day + 1}`, duration: '30 min', rep: lead.assignedRep, nudge: true },
+        timestamp: ts(),
+      });
+      updates.status = 'Meeting Scheduled';
+    } else {
+      updates.status = 'Replied';
+    }
+
+    updates.nextReminderDay = null; // stop follow-ups — lead is engaged
+    updates.lastActionDay = day;
   }
 
-  // Hot lead closes on rel 5
-  if (hotLead && lead.id === hotLead.id && rel === 5) {
+  // --- Close (seeded day per lead) ---
+  if (story.closeDay !== null && rel === story.closeDay &&
+      !['Closed Won', 'Closed Lost'].includes(lead.status)) {
     actions.push({
       id: uid(), day, type: 'call_logged', leadId: lead.id, leadName: lead.name,
       actor: 'team',
@@ -158,44 +196,20 @@ export function actionsForLeadOnDay(
     });
     updates.status = 'Closed Won';
     updates.nextReminderDay = null;
+    updates.lastActionDay = day;
   }
 
-  // --- Warm lead: replies on rel+5 (if they exist) ---
-  if (warmLead && lead.id === warmLead.id && rel === 5) {
-    updates.status = 'Replied';
-    actions.push({
-      id: uid(), day, type: 'reply_received', leadId: lead.id, leadName: lead.name,
-      actor: 'customer',
-      summary: `${lead.name} replied: "Interested but swamped — follow up next week"`,
-      detail: { from: lead.email, body: `Hey, I'm interested but things are hectic right now. Can you follow up with me in a week or so?` },
-      timestamp: ts(),
-    });
-    actions.push({
-      id: uid(), day, type: 'email_sent', leadId: lead.id, leadName: lead.name,
-      actor: 'ai',
-      summary: `AI replied — reminder clock reset for ${lead.name}`,
-      detail: { subject: 'Re: Project Proposal', body: `Understood ${lead.name} — no rush at all. I'll check back in a week. In the meantime, here's a quick overview of what we'd build for you.\n\n— ${lead.assignedRep} (via CloseIt AI)` },
-      timestamp: ts(),
-    });
-    updates.remindersSent = 0; // reset on reply
-    updates.nextReminderDay = day + freq;
-  }
-
-  // --- Standard reminder logic (for all leads not on scripted reply days) ---
-  const isHotOnReplyDay = hotLead && lead.id === hotLead.id && rel === 3;
-  const isWarmOnReplyDay = warmLead && lead.id === warmLead.id && rel === 5;
-  const isHotOnCloseDay = hotLead && lead.id === hotLead.id && rel === 5;
+  // --- Automated follow-up reminders (only for unengaged leads) ---
+  const engagedStatuses = ['Replied', 'Meeting Scheduled', 'Closed Won', 'Closed Lost', 'Nurture'];
+  const onReplyDay = story.customerReplyDay === rel;
+  const onCloseDay = story.closeDay === rel;
 
   if (
+    !engagedStatuses.includes(lead.status) &&
+    !onReplyDay &&
+    !onCloseDay &&
     lead.nextReminderDay === day &&
-    lead.remindersSent < maxR &&
-    !isHotOnReplyDay &&
-    !isWarmOnReplyDay &&
-    !isHotOnCloseDay &&
-    lead.status !== 'Meeting Scheduled' &&
-    lead.status !== 'Closed Won' &&
-    lead.status !== 'Closed Lost' &&
-    lead.status !== 'Nurture'
+    lead.remindersSent < maxR
   ) {
     const reminderNum = lead.remindersSent + 1;
     actions.push({
@@ -214,21 +228,13 @@ export function actionsForLeadOnDay(
     updates.lastActionDay = day;
 
     if (lead.remindersSent + 1 >= maxR) {
-      // Max reminders hit — move to Nurture
       updates.status = 'Nurture';
       updates.nextReminderDay = null;
       actions.push({
         id: uid(), day, type: 'moved_to_nurture', leadId: lead.id, leadName: lead.name,
         actor: 'system',
         summary: `${lead.name} moved to Nurture — max follow-ups reached`,
-        detail: { reason: `${maxR} follow-ups sent, no response. Sequence paused.` },
-        timestamp: ts(),
-      });
-      actions.push({
-        id: uid(), day, type: 'slack_alert', leadId: lead.id, leadName: lead.name,
-        actor: 'system',
-        summary: `⚠️ Lead gone cold: ${lead.name}`,
-        detail: { channel: '#sales-alerts', message: `⚠️ *${lead.name}* moved to Nurture after ${maxR} unanswered follow-ups. No further auto-outreach.` },
+        detail: { reason: `${maxR} follow-ups sent with no response. Sequence paused.` },
         timestamp: ts(),
       });
     } else {
