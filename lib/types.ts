@@ -9,6 +9,8 @@ export interface Lead {
   email: string;
   phone?: string;
   company?: string;
+  projectName: string;
+  projectDescription: string;
   source: 'simulator_form';
   formInputs: {
     budget: number;
@@ -27,10 +29,9 @@ export interface Lead {
 }
 
 export type ActionType =
-  | 'email_sent' | 'whatsapp_preview' | 'sms_preview' | 'slack_alert'
-  | 'score_update' | 'reply_received' | 'meeting_scheduled'
-  | 'chat_summary_ready' | 'rep_assigned' | 'proposal_sent'
-  | 'call_logged' | 'closed_won' | 'closed_lost' | 'moved_to_nurture' | 'error';
+  | 'email_sent' | 'score_update' | 'reply_received' | 'meeting_scheduled'
+  | 'rep_assigned' | 'proposal_sent' | 'call_logged' | 'closed_won'
+  | 'closed_lost' | 'moved_to_nurture' | 'staff_nudge' | 'meeting_minutes' | 'error';
 
 export type ActionActor = 'system' | 'ai' | 'team' | 'customer';
 

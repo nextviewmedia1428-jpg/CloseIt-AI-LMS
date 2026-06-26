@@ -10,6 +10,8 @@ const schema = z.object({
   email: z.string().email(),
   phone: z.string().optional(),
   company: z.string().optional(),
+  projectName: z.string().min(2, 'Project name is required'),
+  projectDescription: z.string().optional(),
   budget: z.string().min(1, 'Required'),
   timelineDays: z.string().min(1, 'Required'),
 });
@@ -36,7 +38,7 @@ export function LeadRegistrationForm() {
     const res = await fetch('/api/leads/register', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ ...data, budget: Number(data.budget), timelineDays: Number(data.timelineDays), intentSignal, currentDay: day, config }),
+      body: JSON.stringify({ ...data, budget: Number(data.budget), timelineDays: Number(data.timelineDays), projectDescription: data.projectDescription || '', intentSignal, currentDay: day, config }),
     });
     const { lead } = await res.json();
     addLead(lead);
@@ -68,6 +70,18 @@ export function LeadRegistrationForm() {
         <div className="grid grid-cols-2 gap-3">
           <input {...register('phone')} placeholder="Phone" className={inp} />
           <input {...register('company')} placeholder="Company" className={inp} />
+        </div>
+        <div>
+          <input {...register('projectName')} placeholder="Project name *  (e.g. Sales automation pipeline)" className={inp} />
+          {errors.projectName && <p className={err}>{errors.projectName.message}</p>}
+        </div>
+        <div>
+          <textarea
+            {...register('projectDescription')}
+            placeholder="Project description (optional — leave blank and we'll generate one)"
+            rows={2}
+            className={`${inp} resize-none`}
+          />
         </div>
         <div className="grid grid-cols-2 gap-3">
           <div>

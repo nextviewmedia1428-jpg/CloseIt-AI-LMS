@@ -1,0 +1,134 @@
+{
+  "name": "WF5 Follow-up Agent",
+  "nodes": [
+    {
+      "parameters": {
+        "httpMethod": "POST",
+        "path": "closeit/agent-analyze",
+        "responseMode": "responseNode",
+        "options": {}
+      },
+      "id": "n1",
+      "name": "Webhook",
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 2,
+      "position": [240, 300]
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "string": [
+            {
+              "value1": "={{ $json.headers['x-webhook-secret'] }}",
+              "value2": "closeit_secret_2026"
+            }
+          ]
+        }
+      },
+      "id": "n2",
+      "name": "Check Secret",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 1,
+      "position": [460, 300]
+    },
+    {
+      "parameters": {
+        "respondWith": "json",
+        "responseBody": "={ \"error\": \"Unauthorized\" }",
+        "options": { "responseCode": 401 }
+      },
+      "id": "n3",
+      "name": "Reject",
+      "type": "n8n-nodes-base.respondToWebhook",
+      "typeVersion": 1,
+      "position": [680, 460]
+    },
+    {
+      "parameters": {
+        "jsCode": "const lead = $json.body.lead;\nconst thread = $json.body.thread || '(no thread yet)';\n\nconst prompt = `You are an autonomous sales follow-up agent for a B2B lead management system.\n\nHere is the full communication thread for a lead:\n\nLead name: ${lead.name}\nLead email: ${lead.email}\nCompany: ${lead.company || 'Unknown'}\nBudget: $${lead.formInputs?.budget}\nTimeline: ${lead.formInputs?.timelineDays} days\nScore: ${lead.score}/10 (${lead.classification})\nAssigned rep: ${lead.assignedRep}\nCurrent status: ${lead.status}\nReminders sent: ${lead.remindersSent}\n\nCommunication thread:\n${thread}\n\nYour task:\n1. Analyze the thread and determine who currently \"has the ball\" — the lead (customer hasn't replied, we are waiting on them), the staff (lead has taken an action and the rep needs to respond), or nobody (lead is closed).\n2. State the single most important next action.\n3. Provide a brief reasoning (2-3 sentences).\n4. Draft the appropriate message — either to the lead (email) or to the assigned rep (internal note) depending on who needs to act.\n\nRespond ONLY with valid JSON in exactly this shape:\n{\n  \"pendingFrom\": \"lead\" | \"staff\" | \"none\",\n  \"pendingAction\": \"<one sentence describing the immediate next action>\",\n  \"reasoning\": \"<2-3 sentences explaining your analysis>\",\n  \"draftMessage\": {\n    \"to\": \"<recipient name>\",\n    \"recipientType\": \"lead\" | \"staff\",\n    \"subject\": \"<subject line>\",\n    \"body\": \"<full message body>\"\n  }\n}\n\nIf pendingFrom is \"none\", set draftMessage to null.`;\n\nreturn [{ json: { prompt, lead, thread } }];"
+      },
+      "id": "n4",
+      "name": "Build Prompt",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [680, 300]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "https://api.openai.com/v1/chat/completions",
+        "authentication": "genericCredentialType",
+        "genericAuthType": "httpHeaderAuth",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "Authorization",
+              "value": "Bearer PASTE_YOUR_OPENAI_KEY_HERE"
+            }
+          ]
+        },
+        "sendBody": true,
+        "contentType": "json",
+        "body": "={\n  \"model\": \"gpt-4o-mini\",\n  \"temperature\": 0.3,\n  \"messages\": [\n    {\n      \"role\": \"user\",\n      \"content\": {{ JSON.stringify($json.prompt) }}\n    }\n  ],\n  \"response_format\": { \"type\": \"json_object\" }\n}",
+        "options": {
+          "timeout": 30000
+        }
+      },
+      "id": "n5",
+      "name": "OpenAI Analyze",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4,
+      "position": [900, 300]
+    },
+    {
+      "parameters": {
+        "jsCode": "const raw = $json.choices[0].message.content;\nlet parsed;\ntry {\n  parsed = JSON.parse(raw);\n} catch (e) {\n  parsed = {\n    pendingFrom: 'none',\n    pendingAction: 'Unable to analyze thread.',\n    reasoning: 'The AI returned an unreadable response.',\n    draftMessage: null\n  };\n}\nreturn [{ json: parsed }];"
+      },
+      "id": "n6",
+      "name": "Parse Response",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [1120, 300]
+    },
+    {
+      "parameters": {
+        "respondWith": "json",
+        "responseBody": "={{ JSON.stringify($json) }}",
+        "options": {}
+      },
+      "id": "n7",
+      "name": "Respond",
+      "type": "n8n-nodes-base.respondToWebhook",
+      "typeVersion": 1,
+      "position": [1340, 300]
+    }
+  ],
+  "connections": {
+    "Webhook": {
+      "main": [[{ "node": "Check Secret", "type": "main", "index": 0 }]]
+    },
+    "Check Secret": {
+      "main": [
+        [{ "node": "Build Prompt", "type": "main", "index": 0 }],
+        [{ "node": "Reject", "type": "main", "index": 0 }]
+      ]
+    },
+    "Build Prompt": {
+      "main": [[{ "node": "OpenAI Analyze", "type": "main", "index": 0 }]]
+    },
+    "OpenAI Analyze": {
+      "main": [[{ "node": "Parse Response", "type": "main", "index": 0 }]]
+    },
+    "Parse Response": {
+      "main": [[{ "node": "Respond", "type": "main", "index": 0 }]]
+    }
+  },
+  "active": false,
+  "settings": {
+    "executionOrder": "v1"
+  },
+  "meta": {
+    "instanceId": "closeit"
+  }
+}

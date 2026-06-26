@@ -18,17 +18,17 @@ const actorLabel: Record<ActionActor, string> = {
 
 const typeIcon: Partial<Record<ActionType, string>> = {
   email_sent: '✉️',
-  slack_alert: '🔔',
   score_update: '🎯',
   reply_received: '💬',
   meeting_scheduled: '📅',
+  meeting_minutes: '📋',
+  staff_nudge: '⚡',
   rep_assigned: '👤',
   proposal_sent: '📄',
   call_logged: '📞',
   closed_won: '🎉',
   closed_lost: '❌',
   moved_to_nurture: '🌱',
-  chat_summary_ready: '🤖',
   error: '⚠️',
 };
 

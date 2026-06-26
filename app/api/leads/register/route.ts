@@ -6,7 +6,7 @@ const MOCK = process.env.MOCK_N8N === 'true' || !process.env.N8N_BASE_URL;
 
 export async function POST(req: NextRequest) {
   const body = await req.json();
-  const { name, email, phone, company, budget, timelineDays, intentSignal, currentDay, config } = body;
+  const { name, email, phone, company, projectName, projectDescription, budget, timelineDays, intentSignal, currentDay, config } = body;
 
   const assignedRep = STAFF_POOL[Math.floor(Math.random() * STAFF_POOL.length)];
   const id = `lead_${Date.now()}_${Math.random().toString(36).slice(2, 7)}`;
@@ -18,6 +18,8 @@ export async function POST(req: NextRequest) {
     email,
     phone,
     company,
+    projectName: projectName ?? '',
+    projectDescription: projectDescription ?? '',
     source: 'simulator_form',
     formInputs: { budget, timelineDays },
     intentSignal,
