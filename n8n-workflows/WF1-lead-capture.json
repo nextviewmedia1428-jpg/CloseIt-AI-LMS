@@ -1,0 +1,236 @@
+{
+  "name": "WF1 — Lead Capture + Score",
+  "nodes": [
+    {
+      "parameters": {
+        "httpMethod": "POST",
+        "path": "closeit/register-lead",
+        "responseMode": "responseNode",
+        "options": {}
+      },
+      "id": "wf1-01",
+      "name": "Webhook",
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 2,
+      "position": [180, 300],
+      "webhookId": "closeit-register-lead"
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": { "caseSensitive": true, "leftValue": "", "typeValidation": "strict", "version": 2 },
+          "conditions": [
+            {
+              "id": "check-secret",
+              "leftValue": "={{ $json.headers['x-webhook-secret'] }}",
+              "rightValue": "closeit_secret_2026",
+              "operator": { "type": "string", "operation": "equals" }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      },
+      "id": "wf1-02",
+      "name": "Check Secret",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.2,
+      "position": [400, 300]
+    },
+    {
+      "parameters": {
+        "respondWith": "json",
+        "responseBody": "={ \"error\": \"Unauthorized\" }",
+        "options": { "responseCode": 401 }
+      },
+      "id": "wf1-03",
+      "name": "Reject 401",
+      "type": "n8n-nodes-base.respondToWebhook",
+      "typeVersion": 1.1,
+      "position": [620, 520]
+    },
+    {
+      "parameters": {
+        "jsCode": "const body = $input.first().json.body;\n\nconst staffPool = ['Arjun', 'Priya', 'Sam'];\nconst assignedRep = staffPool[Math.floor(Math.random() * staffPool.length)];\n\nconst intents = ['low', 'medium', 'high'];\nconst intentSignal = body.intentSignal || intents[Math.floor(Math.random() * intents.length)];\n\nconst id = `lead_${Date.now()}_${Math.random().toString(36).slice(2, 7)}`;\nconst freq = body.config?.reminders?.frequencyDays || 2;\nconst currentDay = body.currentDay || 0;\n\nreturn [{\n  json: {\n    id,\n    name: body.name,\n    email: body.email.toLowerCase(),\n    phone: body.phone || '',\n    company: body.company || '',\n    source: 'simulator_form',\n    budget: body.budget,\n    timeline_days: body.timelineDays,\n    intent_signal: intentSignal,\n    score: 0,\n    classification: 'Pending',\n    status: 'New',\n    reminders_sent: 0,\n    next_reminder_day: currentDay + 1 + freq,\n    registered_on_day: currentDay,\n    last_action_day: currentDay,\n    thread_summary: '',\n    assigned_rep: assignedRep,\n    created_at: new Date().toISOString()\n  }\n}];"
+      },
+      "id": "wf1-04",
+      "name": "Build Lead",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [620, 300]
+    },
+    {
+      "parameters": {
+        "operation": "appendOrUpdate",
+        "documentId": {
+          "__rl": true,
+          "value": "12jrapE2Qnmvb9DbVDnLVuAwnzgQOUnWEq9ESrOhXcdQ",
+          "mode": "id"
+        },
+        "sheetName": {
+          "__rl": true,
+          "value": "Leads",
+          "mode": "name"
+        },
+        "columns": {
+          "mappingMode": "autoMapInputData",
+          "value": {},
+          "matchingColumns": ["email"],
+          "schema": []
+        },
+        "options": {}
+      },
+      "id": "wf1-05",
+      "name": "Save to Leads Sheet",
+      "type": "n8n-nodes-base.googleSheets",
+      "typeVersion": 4.5,
+      "position": [860, 300],
+      "credentials": {
+        "googleSheetsOAuth2Api": {
+          "id": "REPLACE_WITH_YOUR_CREDENTIAL_ID",
+          "name": "Google Sheets"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "jsCode": "const lead = $('Build Lead').first().json;\nconst config = $('Webhook').first().json.body.config || {\n  scoring: { budgetWeight: 40, intentWeight: 30, timelineWeight: 30 }\n};\n\nconst { budgetWeight, intentWeight, timelineWeight } = config.scoring;\n\nconst requestBody = {\n  model: 'gpt-4o-mini',\n  messages: [\n    {\n      role: 'system',\n      content: 'You are a lead scoring engine. Apply the exact formula provided and return ONLY valid JSON. No markdown, no explanation outside the JSON.'\n    },\n    {\n      role: 'user',\n      content: `Score this lead 0-10 using these inputs and weights:\\n\\nBudget: $${lead.budget}\\nTimeline: ${lead.timeline_days} days\\nIntent signal: ${lead.intent_signal}\\n\\nScoring rules:\\n- budgetScore: budget > 2000 → 10, budget 500-2000 → 6, budget < 500 → 3\\n- intentScore: high → 9, medium → 6, low → 3\\n- timelineScore: ≤7 days → 10, ≤21 days → 6, >21 days → 3\\n\\nWeights: Budget ${budgetWeight}%, Intent ${intentWeight}%, Timeline ${timelineWeight}%\\n\\nFormula: score = round((budgetScore × ${budgetWeight} + intentScore × ${intentWeight} + timelineScore × ${timelineWeight}) / 100)\\nClassification: score ≥ 7 = Hot, score 4–6 = Warm, score < 4 = Cold\\n\\nReturn ONLY this JSON: {\"score\": <number 0-10>, \"classification\": \"Hot\"|\"Warm\"|\"Cold\", \"rationale\": \"<one line explaining the score>\"}`\n    }\n  ],\n  temperature: 0,\n  response_format: { type: 'json_object' }\n};\n\nreturn [{ json: { requestBody } }];"
+      },
+      "id": "wf1-06",
+      "name": "Build Score Request",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [1100, 300]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "https://api.openai.com/v1/chat/completions",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            { "name": "Authorization", "value": "Bearer PASTE_YOUR_OPENAI_KEY_HERE" },
+            { "name": "Content-Type", "value": "application/json" }
+          ]
+        },
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ JSON.stringify($json.requestBody) }}",
+        "options": {
+          "retry": {
+            "enabled": true,
+            "maxTries": 3,
+            "waitBetweenTries": 2000
+          }
+        }
+      },
+      "id": "wf1-07",
+      "name": "OpenAI Score Lead",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [1340, 300]
+    },
+    {
+      "parameters": {
+        "jsCode": "const raw = $input.first().json.choices[0].message.content;\nconst scoreData = JSON.parse(raw);\nconst lead = $('Build Lead').first().json;\n\nreturn [{\n  json: {\n    score: scoreData.score,\n    classification: scoreData.classification,\n    rationale: scoreData.rationale,\n    // Fields needed to update the row in Sheets\n    email: lead.email,\n    id: lead.id\n  }\n}];"
+      },
+      "id": "wf1-08",
+      "name": "Parse Score",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [1580, 300]
+    },
+    {
+      "parameters": {
+        "operation": "appendOrUpdate",
+        "documentId": {
+          "__rl": true,
+          "value": "12jrapE2Qnmvb9DbVDnLVuAwnzgQOUnWEq9ESrOhXcdQ",
+          "mode": "id"
+        },
+        "sheetName": {
+          "__rl": true,
+          "value": "Leads",
+          "mode": "name"
+        },
+        "columns": {
+          "mappingMode": "autoMapInputData",
+          "value": {},
+          "matchingColumns": ["email"],
+          "schema": []
+        },
+        "options": {}
+      },
+      "id": "wf1-09",
+      "name": "Update Score in Sheet",
+      "type": "n8n-nodes-base.googleSheets",
+      "typeVersion": 4.5,
+      "position": [1820, 300],
+      "credentials": {
+        "googleSheetsOAuth2Api": {
+          "id": "REPLACE_WITH_YOUR_CREDENTIAL_ID",
+          "name": "Google Sheets"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "jsCode": "const lead = $('Build Lead').first().json;\nconst scoreData = $('Parse Score').first().json;\n\nconst finalLead = {\n  ...lead,\n  score: scoreData.score,\n  classification: scoreData.classification,\n  assignedRep: lead.assigned_rep,\n  formInputs: {\n    budget: lead.budget,\n    timelineDays: lead.timeline_days\n  },\n  intentSignal: lead.intent_signal,\n  registeredOnDay: lead.registered_on_day,\n  lastActionDay: lead.last_action_day,\n  remindersSent: lead.reminders_sent,\n  nextReminderDay: lead.next_reminder_day\n};\n\nreturn [{ json: { lead: finalLead } }];"
+      },
+      "id": "wf1-10",
+      "name": "Build Response",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [2060, 300]
+    },
+    {
+      "parameters": {
+        "respondWith": "json",
+        "responseBody": "={{ JSON.stringify({ lead: $json.lead }) }}",
+        "options": { "responseCode": 200 }
+      },
+      "id": "wf1-11",
+      "name": "Respond",
+      "type": "n8n-nodes-base.respondToWebhook",
+      "typeVersion": 1.1,
+      "position": [2300, 300]
+    }
+  ],
+  "connections": {
+    "Webhook": {
+      "main": [ [{ "node": "Check Secret", "type": "main", "index": 0 }] ]
+    },
+    "Check Secret": {
+      "main": [
+        [{ "node": "Build Lead", "type": "main", "index": 0 }],
+        [{ "node": "Reject 401", "type": "main", "index": 0 }]
+      ]
+    },
+    "Build Lead": {
+      "main": [ [{ "node": "Save to Leads Sheet", "type": "main", "index": 0 }] ]
+    },
+    "Save to Leads Sheet": {
+      "main": [ [{ "node": "Build Score Request", "type": "main", "index": 0 }] ]
+    },
+    "Build Score Request": {
+      "main": [ [{ "node": "OpenAI Score Lead", "type": "main", "index": 0 }] ]
+    },
+    "OpenAI Score Lead": {
+      "main": [ [{ "node": "Parse Score", "type": "main", "index": 0 }] ]
+    },
+    "Parse Score": {
+      "main": [ [{ "node": "Update Score in Sheet", "type": "main", "index": 0 }] ]
+    },
+    "Update Score in Sheet": {
+      "main": [ [{ "node": "Build Response", "type": "main", "index": 0 }] ]
+    },
+    "Build Response": {
+      "main": [ [{ "node": "Respond", "type": "main", "index": 0 }] ]
+    }
+  },
+  "settings": { "executionOrder": "v1" },
+  "staticData": null,
+  "tags": [],
+  "pinData": {},
+  "versionId": "wf1-closeit-v1"
+}

@@ -1,0 +1,170 @@
+{
+  "name": "WF2 — Next Day Engine",
+  "nodes": [
+    {
+      "parameters": {
+        "httpMethod": "POST",
+        "path": "closeit/next-day",
+        "responseMode": "responseNode",
+        "options": {}
+      },
+      "id": "wf2-01",
+      "name": "Webhook",
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 2,
+      "position": [180, 300],
+      "webhookId": "closeit-next-day"
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": { "caseSensitive": true, "leftValue": "", "typeValidation": "strict", "version": 2 },
+          "conditions": [
+            {
+              "id": "check-secret",
+              "leftValue": "={{ $json.headers['x-webhook-secret'] }}",
+              "rightValue": "closeit_secret_2026",
+              "operator": { "type": "string", "operation": "equals" }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      },
+      "id": "wf2-02",
+      "name": "Check Secret",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.2,
+      "position": [400, 300]
+    },
+    {
+      "parameters": {
+        "respondWith": "json",
+        "responseBody": "={ \"error\": \"Unauthorized\" }",
+        "options": { "responseCode": 401 }
+      },
+      "id": "wf2-03",
+      "name": "Reject 401",
+      "type": "n8n-nodes-base.respondToWebhook",
+      "typeVersion": 1.1,
+      "position": [620, 520]
+    },
+    {
+      "parameters": {
+        "jsCode": "const { day, leads, config } = $input.first().json.body;\n\nconst freq = config.reminders.frequencyDays;\nconst maxR = config.reminders.maxReminders;\n\nlet idCounter = Date.now();\nfunction uid() { return `a${idCounter++}`; }\nfunction ts() { return new Date().toISOString(); }\n\nfunction budgetScore(b) { return b > 2000 ? 10 : b >= 500 ? 6 : 3; }\nfunction intentScore(s) { return s === 'high' ? 9 : s === 'medium' ? 6 : 3; }\nfunction timelineScore(d) { return d <= 7 ? 10 : d <= 21 ? 6 : 3; }\n\nfunction computeScore(lead) {\n  const bs = budgetScore(lead.formInputs.budget);\n  const is = intentScore(lead.intentSignal);\n  const ts2 = timelineScore(lead.formInputs.timelineDays);\n  const { budgetWeight, intentWeight, timelineWeight } = config.scoring;\n  const raw = (bs * budgetWeight + is * intentWeight + ts2 * timelineWeight) / 100;\n  const score = Math.round(raw);\n  return { score, classification: score >= 7 ? 'Hot' : score >= 4 ? 'Warm' : 'Cold' };\n}\n\nconst allActions = [];\nconst leadUpdates = {};\n\nconst hotLead = [...leads].filter(l => l.score >= 7).sort((a, b) => a.registeredOnDay - b.registeredOnDay)[0];\nconst warmLead = [...leads].filter(l => l.score >= 4 && l.score < 7).sort((a, b) => a.registeredOnDay - b.registeredOnDay)[0];\n\nfor (const lead of leads) {\n  const rel = day - lead.registeredOnDay;\n  const actions = [];\n  const updates = {};\n\n  if (rel === 1) {\n    const { score, classification } = computeScore(lead);\n    updates.score = score;\n    updates.classification = classification;\n    updates.status = 'Contacted';\n\n    actions.push({ id: uid(), day, type: 'email_sent', leadId: lead.id, leadName: lead.name, actor: 'system', summary: `Onboarding email sent to ${lead.name}`, detail: { channel: 'Email', subject: `Welcome — let's talk about your project`, body: `Hi ${lead.name},\\n\\nThanks for reaching out! Based on your requirements (budget $${lead.formInputs.budget}, timeline ${lead.formInputs.timelineDays} days), we think we can deliver real results.\\n\\nI'd love to understand your goals better. Book a quick call or reply here.\\n\\n— ${lead.assignedRep}` }, timestamp: ts() });\n    actions.push({ id: uid(), day, type: 'score_update', leadId: lead.id, leadName: lead.name, actor: 'ai', summary: `Lead scored ${score}/10 — ${classification}`, detail: { score, classification, weights: config.scoring, rationale: `Budget $${lead.formInputs.budget} (${budgetScore(lead.formInputs.budget)}/10), Intent ${lead.intentSignal} (${intentScore(lead.intentSignal)}/10), Timeline ${lead.formInputs.timelineDays}d (${timelineScore(lead.formInputs.timelineDays)}/10)` }, timestamp: ts() });\n    actions.push({ id: uid(), day, type: 'rep_assigned', leadId: lead.id, leadName: lead.name, actor: 'team', summary: `${lead.assignedRep} assigned to ${lead.name}`, detail: { rep: lead.assignedRep, note: `Assigned based on availability. ${classification} lead — ${score}/10.` }, timestamp: ts() });\n\n    if (score >= 4) {\n      actions.push({ id: uid(), day, type: 'proposal_sent', leadId: lead.id, leadName: lead.name, actor: 'team', summary: `${lead.assignedRep} mailed proposal to ${lead.name}`, detail: { rep: lead.assignedRep, subject: 'Project Proposal — CloseIt Automation', body: `Hi ${lead.name},\\n\\nGreat to connect! I've put together a quick scope based on your brief.\\n\\nBudget: $${lead.formInputs.budget} | Timeline: ${lead.formInputs.timelineDays} days\\n\\nLet me know if you'd like to discuss further.\\n\\n— ${lead.assignedRep}` }, timestamp: ts() });\n    }\n\n    updates.nextReminderDay = day + freq;\n  }\n\n  const isHotReplyDay = hotLead && lead.id === hotLead.id && rel === 3;\n  const isWarmReplyDay = warmLead && lead.id === warmLead.id && rel === 5;\n  const isHotCloseDay = hotLead && lead.id === hotLead.id && rel === 5;\n\n  if (isHotReplyDay) {\n    actions.push({ id: uid(), day, type: 'reply_received', leadId: lead.id, leadName: lead.name, actor: 'customer', summary: `${lead.name} replied: \"Ready to move — can we jump on a call?\"`, detail: { from: lead.email, body: `Hi! This looks exactly like what we need. Can we schedule a call this week? We're ready to move fast on this.` }, timestamp: ts() });\n    actions.push({ id: uid(), day, type: 'email_sent', leadId: lead.id, leadName: lead.name, actor: 'ai', summary: `AI drafted reply sent to ${lead.name}`, detail: { subject: 'Re: Project Proposal', body: `Hi ${lead.name},\\n\\nAbsolutely — I've sent a booking link. Looking forward to connecting and getting things moving.\\n\\n— ${lead.assignedRep} (via CloseIt AI)` }, timestamp: ts() });\n    actions.push({ id: uid(), day, type: 'meeting_scheduled', leadId: lead.id, leadName: lead.name, actor: 'system', summary: `Discovery call booked with ${lead.name}`, detail: { date: `Day ${day + 1}`, duration: '30 min', rep: lead.assignedRep, nudge: true }, timestamp: ts() });\n    updates.status = 'Meeting Scheduled';\n    updates.nextReminderDay = null;\n  }\n\n  if (isHotCloseDay && !isWarmReplyDay) {\n    actions.push({ id: uid(), day, type: 'call_logged', leadId: lead.id, leadName: lead.name, actor: 'team', summary: `${lead.assignedRep} completed discovery call with ${lead.name}`, detail: { rep: lead.assignedRep, notes: `Strong fit. ${lead.name} confirmed budget and timeline. Proceeding to agreement.` }, timestamp: ts() });\n    actions.push({ id: uid(), day, type: 'closed_won', leadId: lead.id, leadName: lead.name, actor: 'team', summary: `🎉 ${lead.name} closed won by ${lead.assignedRep}`, detail: { rep: lead.assignedRep, value: `$${lead.formInputs.budget}`, note: 'Agreement signed. Onboarding starts next week.' }, timestamp: ts() });\n    updates.status = 'Closed Won';\n    updates.nextReminderDay = null;\n  }\n\n  if (isWarmReplyDay && !isHotCloseDay) {\n    actions.push({ id: uid(), day, type: 'reply_received', leadId: lead.id, leadName: lead.name, actor: 'customer', summary: `${lead.name} replied: \"Interested but swamped — check back next week\"`, detail: { from: lead.email, body: `Hey, I'm interested but things are hectic right now. Can you follow up with me in a week or so?` }, timestamp: ts() });\n    actions.push({ id: uid(), day, type: 'email_sent', leadId: lead.id, leadName: lead.name, actor: 'ai', summary: `AI replied — reminder clock reset for ${lead.name}`, detail: { subject: 'Re: Checking In', body: `Understood ${lead.name} — no rush at all. I'll check back in a week. In the meantime, here's a quick overview of what we'd build for you.\\n\\n— ${lead.assignedRep} (via CloseIt AI)` }, timestamp: ts() });\n    updates.remindersSent = 0;\n    updates.nextReminderDay = day + freq;\n    updates.status = 'Replied';\n  }\n\n  const skipReminder = isHotReplyDay || isWarmReplyDay || isHotCloseDay ||\n    ['Meeting Scheduled', 'Closed Won', 'Closed Lost', 'Nurture'].includes(lead.status);\n\n  if (!skipReminder && lead.nextReminderDay === day && lead.remindersSent < maxR) {\n    const reminderNum = lead.remindersSent + 1;\n    actions.push({\n      id: uid(), day, type: 'email_sent', leadId: lead.id, leadName: lead.name, actor: 'ai',\n      summary: `Follow-up #${reminderNum} sent to ${lead.name} (AI-drafted)`,\n      detail: {\n        subject: reminderNum === 1 ? `Quick check-in — ${lead.name}` : `Last note from us — ${lead.name}`,\n        body: reminderNum === 1\n          ? `Hi ${lead.name},\\n\\nJust checking in — did you get a chance to review the proposal? Happy to answer any questions.\\n\\n— ${lead.assignedRep} (via CloseIt AI)`\n          : `Hi ${lead.name},\\n\\nThis is our final note for now. If the timing isn't right, no worries — we'll be here when you're ready.\\n\\n— ${lead.assignedRep} (via CloseIt AI)`\n      },\n      timestamp: ts()\n    });\n    updates.remindersSent = lead.remindersSent + 1;\n    updates.lastActionDay = day;\n\n    if (lead.remindersSent + 1 >= maxR) {\n      updates.status = 'Nurture';\n      updates.nextReminderDay = null;\n      actions.push({ id: uid(), day, type: 'moved_to_nurture', leadId: lead.id, leadName: lead.name, actor: 'system', summary: `${lead.name} moved to Nurture — max follow-ups reached`, detail: { reason: `${maxR} follow-ups sent with no response. Sequence paused.` }, timestamp: ts() });\n    } else {\n      updates.nextReminderDay = day + freq;\n      updates.status = 'Awaiting Reply';\n    }\n  }\n\n  allActions.push(...actions);\n  if (Object.keys(updates).length > 0) leadUpdates[lead.id] = updates;\n}\n\nreturn [{ json: { day, actions: allActions, leadUpdates } }];"
+      },
+      "id": "wf2-04",
+      "name": "Compute Day Actions",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [620, 300]
+    },
+    {
+      "parameters": {
+        "jsCode": "// Split the actions array into individual items for Sheets append\nconst { day, actions, leadUpdates } = $input.first().json;\n\nif (!actions || actions.length === 0) {\n  // No actions — return a dummy item to keep the flow going\n  return [{ json: { _noActions: true, day, leadUpdates } }];\n}\n\nreturn actions.map(action => ({\n  json: {\n    lead_id: action.leadId,\n    day: action.day,\n    action_type: action.type,\n    actor: action.actor,\n    summary: action.summary,\n    detail_json: JSON.stringify(action.detail || {}),\n    timestamp: action.timestamp\n  }\n}));"
+      },
+      "id": "wf2-05",
+      "name": "Split to Activity Rows",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [860, 300]
+    },
+    {
+      "parameters": {
+        "operation": "append",
+        "documentId": {
+          "__rl": true,
+          "value": "12jrapE2Qnmvb9DbVDnLVuAwnzgQOUnWEq9ESrOhXcdQ",
+          "mode": "id"
+        },
+        "sheetName": {
+          "__rl": true,
+          "value": "Activity Log",
+          "mode": "name"
+        },
+        "columns": {
+          "mappingMode": "autoMapInputData",
+          "value": {},
+          "matchingColumns": [],
+          "schema": []
+        },
+        "options": {}
+      },
+      "id": "wf2-06",
+      "name": "Append to Activity Log",
+      "type": "n8n-nodes-base.googleSheets",
+      "typeVersion": 4.5,
+      "position": [1100, 300],
+      "credentials": {
+        "googleSheetsOAuth2Api": {
+          "id": "REPLACE_WITH_YOUR_CREDENTIAL_ID",
+          "name": "Google Sheets"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "aggregate": "aggregateAllItemData",
+        "options": {}
+      },
+      "id": "wf2-07",
+      "name": "Collect Results",
+      "type": "n8n-nodes-base.aggregate",
+      "typeVersion": 1,
+      "position": [1340, 300]
+    },
+    {
+      "parameters": {
+        "jsCode": "const computedData = $('Compute Day Actions').first().json;\nreturn [{ json: { day: computedData.day, actions: computedData.actions, leadUpdates: computedData.leadUpdates } }];"
+      },
+      "id": "wf2-08",
+      "name": "Build Response",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [1580, 300]
+    },
+    {
+      "parameters": {
+        "respondWith": "json",
+        "responseBody": "={{ JSON.stringify({ day: $json.day, actions: $json.actions, leadUpdates: $json.leadUpdates }) }}",
+        "options": { "responseCode": 200 }
+      },
+      "id": "wf2-09",
+      "name": "Respond",
+      "type": "n8n-nodes-base.respondToWebhook",
+      "typeVersion": 1.1,
+      "position": [1820, 300]
+    }
+  ],
+  "connections": {
+    "Webhook": {
+      "main": [ [{ "node": "Check Secret", "type": "main", "index": 0 }] ]
+    },
+    "Check Secret": {
+      "main": [
+        [{ "node": "Compute Day Actions", "type": "main", "index": 0 }],
+        [{ "node": "Reject 401", "type": "main", "index": 0 }]
+      ]
+    },
+    "Compute Day Actions": {
+      "main": [ [{ "node": "Split to Activity Rows", "type": "main", "index": 0 }] ]
+    },
+    "Split to Activity Rows": {
+      "main": [ [{ "node": "Append to Activity Log", "type": "main", "index": 0 }] ]
+    },
+    "Append to Activity Log": {
+      "main": [ [{ "node": "Collect Results", "type": "main", "index": 0 }] ]
+    },
+    "Collect Results": {
+      "main": [ [{ "node": "Build Response", "type": "main", "index": 0 }] ]
+    },
+    "Build Response": {
+      "main": [ [{ "node": "Respond", "type": "main", "index": 0 }] ]
+    }
+  },
+  "settings": { "executionOrder": "v1" },
+  "staticData": null,
+  "tags": [],
+  "pinData": {},
+  "versionId": "wf2-closeit-v1"
+}

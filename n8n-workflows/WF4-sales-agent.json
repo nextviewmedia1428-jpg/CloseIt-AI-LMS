@@ -1,0 +1,132 @@
+{
+  "name": "WF4 — Sales Agent Chat",
+  "nodes": [
+    {
+      "parameters": {
+        "httpMethod": "POST",
+        "path": "closeit/chat-query",
+        "responseMode": "responseNode",
+        "options": {}
+      },
+      "id": "wf4-01",
+      "name": "Webhook",
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 2,
+      "position": [180, 300],
+      "webhookId": "closeit-chat-query"
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": { "caseSensitive": true, "leftValue": "", "typeValidation": "strict", "version": 2 },
+          "conditions": [
+            {
+              "id": "check-secret",
+              "leftValue": "={{ $json.headers['x-webhook-secret'] }}",
+              "rightValue": "closeit_secret_2026",
+              "operator": { "type": "string", "operation": "equals" }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      },
+      "id": "wf4-02",
+      "name": "Check Secret",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.2,
+      "position": [400, 300]
+    },
+    {
+      "parameters": {
+        "respondWith": "json",
+        "responseBody": "={ \"error\": \"Unauthorized\" }",
+        "options": { "responseCode": 401 }
+      },
+      "id": "wf4-03",
+      "name": "Reject 401",
+      "type": "n8n-nodes-base.respondToWebhook",
+      "typeVersion": 1.1,
+      "position": [620, 520]
+    },
+    {
+      "parameters": {
+        "jsCode": "const body = $input.first().json.body;\n\nconst requestBody = {\n  model: 'gpt-4o-mini',\n  messages: [\n    {\n      role: 'system',\n      content: 'You are a sales agent assistant. Answer questions about leads based on their conversation thread. Be concise, specific, and actionable. When asked to summarize, structure your answer clearly. When asked to draft a reply, write professionally but warmly.'\n    },\n    {\n      role: 'user',\n      content: `Lead: ${body.leadName}\\n\\nConversation Thread:\\n${body.thread}\\n\\nQuestion: ${body.question}`\n    }\n  ],\n  temperature: 0.7,\n  max_tokens: 600\n};\n\nreturn [{ json: { requestBody } }];"
+      },
+      "id": "wf4-04",
+      "name": "Build Request",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [620, 300]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "https://api.openai.com/v1/chat/completions",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            { "name": "Authorization", "value": "Bearer PASTE_YOUR_OPENAI_KEY_HERE" },
+            { "name": "Content-Type", "value": "application/json" }
+          ]
+        },
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ JSON.stringify($json.requestBody) }}",
+        "options": {}
+      },
+      "id": "wf4-05",
+      "name": "OpenAI Chat",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [860, 300]
+    },
+    {
+      "parameters": {
+        "jsCode": "const answer = $input.first().json.choices[0].message.content;\nreturn [{ json: { answer } }];"
+      },
+      "id": "wf4-06",
+      "name": "Parse Response",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [1100, 300]
+    },
+    {
+      "parameters": {
+        "respondWith": "json",
+        "responseBody": "={{ JSON.stringify({ answer: $json.answer }) }}",
+        "options": { "responseCode": 200 }
+      },
+      "id": "wf4-07",
+      "name": "Respond",
+      "type": "n8n-nodes-base.respondToWebhook",
+      "typeVersion": 1.1,
+      "position": [1340, 300]
+    }
+  ],
+  "connections": {
+    "Webhook": {
+      "main": [ [{ "node": "Check Secret", "type": "main", "index": 0 }] ]
+    },
+    "Check Secret": {
+      "main": [
+        [{ "node": "Build Request", "type": "main", "index": 0 }],
+        [{ "node": "Reject 401", "type": "main", "index": 0 }]
+      ]
+    },
+    "Build Request": {
+      "main": [ [{ "node": "OpenAI Chat", "type": "main", "index": 0 }] ]
+    },
+    "OpenAI Chat": {
+      "main": [ [{ "node": "Parse Response", "type": "main", "index": 0 }] ]
+    },
+    "Parse Response": {
+      "main": [ [{ "node": "Respond", "type": "main", "index": 0 }] ]
+    }
+  },
+  "settings": { "executionOrder": "v1" },
+  "staticData": null,
+  "tags": [],
+  "pinData": {},
+  "versionId": "wf4-closeit-v1"
+}
