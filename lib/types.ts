@@ -29,6 +29,8 @@ export interface Lead {
   lastUserReplyDay: number | null; // last day user sent a message
   replyFrequencyDays: number;     // expected reply cadence (2–6), seeded per lead
   discoveryCallDay: number | null;
+  agentFollowUpCount: number;     // how many pre-discovery follow-ups CloseIt has sent
+  lastAgentFollowUpDay: number | null;
   threadSummary?: string;
 }
 

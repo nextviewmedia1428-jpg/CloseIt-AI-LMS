@@ -19,13 +19,12 @@ export function generateLeadSchedule(
   lossCount = 0,
 ): Record<number, Lead[]> {
   const schedule: Record<number, Lead[]> = {};
-  const usedProfileIndices = new Set<number>();
+  // Track last day each profile was used — enforce minimum 12-day gap to prevent visible duplicates
+  const lastUsedDay: Record<number, number> = {};
 
   // Base rate adapts to win/loss history
   const rateModifier = 1 + winCount * 0.1 - lossCount * 0.1;
   const clampedRate = Math.max(0.5, Math.min(2.0, rateModifier));
-
-  let profileCursor = 0;
 
   for (let day = 0; day < totalDays; day++) {
     // Each day gets 1–4 leads, modulated by win/loss rate
@@ -34,19 +33,22 @@ export function generateLeadSchedule(
     const count = Math.min(4, Math.max(1, raw));
 
     schedule[day] = [];
+    const usedThisDay = new Set<number>();
 
     for (let i = 0; i < count; i++) {
       const profileSeed = seeded(`day${day}lead${i}profile`);
-      // Pick a profile not recently used
       let profileIdx = Math.floor(profileSeed * LEAD_PROFILES.length);
+      // Skip profiles used today or within the last 12 days
       let attempts = 0;
-      while (usedProfileIndices.has(profileIdx) && attempts < LEAD_PROFILES.length) {
+      while (
+        (usedThisDay.has(profileIdx) || (lastUsedDay[profileIdx] ?? -99) > day - 12) &&
+        attempts < LEAD_PROFILES.length
+      ) {
         profileIdx = (profileIdx + 1) % LEAD_PROFILES.length;
         attempts++;
       }
-      usedProfileIndices.add(profileIdx);
-      // Reset pool when all profiles used
-      if (usedProfileIndices.size >= LEAD_PROFILES.length) usedProfileIndices.clear();
+      usedThisDay.add(profileIdx);
+      lastUsedDay[profileIdx] = day;
 
       const profile = LEAD_PROFILES[profileIdx];
       const id = `lead_d${day}_${i}_${profileIdx}`;
@@ -70,6 +72,8 @@ export function generateLeadSchedule(
         lastUserReplyDay: null,
         replyFrequencyDays: profile.replyFrequencyDays,
         discoveryCallDay: null,
+        agentFollowUpCount: 0,
+        lastAgentFollowUpDay: null,
       };
 
       schedule[day].push(lead);

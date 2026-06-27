@@ -6,6 +6,66 @@ import { recomputeScore } from '@/lib/scoring';
 
 const TOTAL_DAYS = 30;
 
+// Applies the structured response returned by n8n WF2 to the store state.
+function applyN8nResponse(
+  get: () => SimulatorStore,
+  set: (partial: Partial<SimulatorStore> | ((s: SimulatorStore) => Partial<SimulatorStore>)) => void,
+  newDay: number,
+  data: {
+    newLeads?: Lead[];
+    threadMessages?: { leadId: string; from: 'agent' | 'lead' | 'user'; body: string; day: number }[];
+    scoreUpdates?: { leadId: string; score: number; delta: number }[];
+    statusUpdates?: { leadId: string; status: Lead['status']; agentFollowUpCount?: number; lastAgentFollowUpDay?: number; discoveryCallDay?: number }[];
+    agentActions?: Action[];
+    notifications?: { type: Notification['type']; message: string }[];
+    tasks?: { leadId: string; leadName: string; company: string; callDay: number }[];
+  }
+) {
+  const s = get();
+
+  // Merge new leads
+  const existingIds = new Set(s.leads.map(l => l.id));
+  const brandNewLeads: Lead[] = (data.newLeads ?? []).filter(l => !existingIds.has(l.id));
+  let leads = [...s.leads, ...brandNewLeads];
+
+  // Apply score updates
+  if (data.scoreUpdates?.length) {
+    const scoreMap = Object.fromEntries(data.scoreUpdates.map(u => [u.leadId, u]));
+    leads = leads.map(l => scoreMap[l.id] ? { ...l, score: scoreMap[l.id].score, scoreDelta: scoreMap[l.id].delta } : l);
+  }
+
+  // Apply status + field updates
+  if (data.statusUpdates?.length) {
+    const statusMap = Object.fromEntries(data.statusUpdates.map(u => [u.leadId, u]));
+    leads = leads.map(l => statusMap[l.id] ? { ...l, ...statusMap[l.id], id: l.id } : l);
+  }
+
+  // Apply thread messages
+  const threadUpdates = { ...s.threadsByLead };
+  for (const msg of data.threadMessages ?? []) {
+    const tm: ThreadMessage = { id: `n8n_${msg.leadId}_${newDay}_${msg.from}`, day: msg.day, from: msg.from, body: msg.body, timestamp: new Date().toISOString() };
+    threadUpdates[msg.leadId] = [...(threadUpdates[msg.leadId] ?? []), tm];
+  }
+
+  // Tasks
+  const incomingTasks: OpenTask[] = (data.tasks ?? []).map(t => ({ ...t, status: 'pending' as const }));
+  const existingTaskIds = new Set(s.tasks.map(t => t.leadId));
+  const newTasks = incomingTasks.filter(t => !existingTaskIds.has(t.leadId));
+
+  // Notifications
+  const notifsWithId: Notification[] = (data.notifications ?? []).map((n, idx) => ({ ...n, id: `n8n_notif_${newDay}_${idx}`, day: newDay, read: false }));
+
+  set({
+    day: newDay,
+    leads,
+    threadsByLead: threadUpdates,
+    actionsByDay: { ...s.actionsByDay, [newDay]: data.agentActions ?? [] },
+    tasks: [...s.tasks, ...newTasks],
+    notifications: [...s.notifications, ...notifsWithId],
+    isAdvancing: false,
+  });
+}
+
 interface SimulatorStore {
   day: number;
   leads: Lead[];
@@ -26,7 +86,7 @@ interface SimulatorStore {
   isAdvancing: boolean;
 
   // Actions
-  nextDay: () => void;
+  nextDay: () => Promise<void>;
   selectLead: (id: string | null) => void;
   openMomPanel: (leadId: string) => void;
   closeMomPanel: () => void;
@@ -63,15 +123,43 @@ export const useSimulatorStore = create<SimulatorStore>((set, get) => {
     lossCount: 0,
     isAdvancing: false,
 
-    nextDay: () => {
+    nextDay: async () => {
       const { day, leads, leadSchedule, threadsByLead, closeItEnabled } = get();
       const newDay = day + 1;
+      set({ isAdvancing: true });
 
-      // 1. Bring in leads scheduled for the new day
-      const arrivingLeads = leadSchedule[newDay] ?? [];
+      // Pre-scheduled leads from local generator (used as fallback seed data)
+      const scheduledLeads = leadSchedule[newDay] ?? [];
+
+      try {
+        // Call n8n with full current state — n8n does all computation + AI
+        const res = await fetch('/api/simulate/next-day', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            day: newDay,
+            closeItEnabled,
+            leads,
+            threads: threadsByLead,
+            scheduledLeads, // fallback hint for n8n if it wants to use them
+          }),
+        });
+
+        const data = await res.json();
+
+        // If n8n is live and responded with real data, apply it
+        if (!data.mock && data.newLeads !== undefined) {
+          applyN8nResponse(get, set, newDay, data);
+          return;
+        }
+      } catch {
+        // n8n unreachable — fall through to local fallback
+      }
+
+      // ── Local fallback (mock / n8n down) ────────────────────────────────
+      const arrivingLeads = scheduledLeads;
       const allNewLeads = [...leads, ...arrivingLeads];
 
-      // 2. Re-score ALL active leads at day start (silent background process)
       const rescored = allNewLeads.map(lead => {
         if (['Nurture', 'Closed Won', 'Closed Lost'].includes(lead.status)) return lead;
         const thread = threadsByLead[lead.id] ?? [];
@@ -79,14 +167,11 @@ export const useSimulatorStore = create<SimulatorStore>((set, get) => {
         return { ...lead, score, scoreDelta };
       });
 
-      // 3. Notify for new arrivals
       const newNotifications: Omit<Notification, 'id' | 'read'>[] = arrivingLeads.map(l => ({
-        day: newDay,
-        type: 'lead_arrived' as const,
+        day: newDay, type: 'lead_arrived' as const,
         message: `New lead: ${l.name} from ${l.company} (${l.startType === 'warm' ? 'warm inbound' : 'cold outreach'})`,
       }));
 
-      // 4. If CloseIt is on, run day actions for each lead
       let allDayActions: Action[] = [];
       const threadUpdates: Record<string, ThreadMessage[]> = { ...threadsByLead };
       let updatedLeads = rescored;
@@ -96,64 +181,25 @@ export const useSimulatorStore = create<SimulatorStore>((set, get) => {
           if (['Closed Won', 'Closed Lost'].includes(lead.status)) continue;
           const thread = threadUpdates[lead.id] ?? [];
           const { actions, messages, leadUpdates } = actionsForLeadOnDay(lead, newDay, thread);
-
           allDayActions = [...allDayActions, ...actions];
+          if (messages.length) threadUpdates[lead.id] = [...thread, ...messages];
+          if (Object.keys(leadUpdates).length)
+            updatedLeads = updatedLeads.map(l => l.id === lead.id ? { ...l, ...leadUpdates } : l);
 
-          if (messages.length) {
-            threadUpdates[lead.id] = [...thread, ...messages];
-          }
-
-          if (Object.keys(leadUpdates).length) {
-            updatedLeads = updatedLeads.map(l =>
-              l.id === lead.id ? { ...l, ...leadUpdates } : l
-            );
-          }
-
-          // Create tasks for booked discovery calls
           if (actions.some(a => a.type === 'discovery_call_booked')) {
-            const bookedLead = updatedLeads.find(l => l.id === lead.id)!;
-            const task: OpenTask = {
-              leadId: lead.id,
-              leadName: bookedLead.name,
-              company: bookedLead.company,
-              callDay: bookedLead.discoveryCallDay ?? newDay + 1,
-              status: 'pending',
-            };
+            const bl = updatedLeads.find(l => l.id === lead.id)!;
+            const task: OpenTask = { leadId: lead.id, leadName: bl.name, company: bl.company, callDay: bl.discoveryCallDay ?? newDay + 1, status: 'pending' };
             set(s => ({ tasks: [...s.tasks.filter(t => t.leadId !== lead.id), task] }));
-            newNotifications.push({
-              day: newDay,
-              type: 'call_booked',
-              message: `Discovery call booked with ${lead.name} (${lead.company})`,
-            });
+            newNotifications.push({ day: newDay, type: 'call_booked', message: `Discovery call booked with ${lead.name} (${lead.company})` });
           }
-
-          // Notify for critical score drops
-          const updatedLead = updatedLeads.find(l => l.id === lead.id);
-          if (updatedLead && updatedLead.score < 4 && lead.score >= 4) {
-            newNotifications.push({
-              day: newDay,
-              type: 'score_critical',
-              message: `${lead.name}'s score dropped to ${updatedLead.score} — needs attention`,
-            });
-          }
+          const ul = updatedLeads.find(l => l.id === lead.id);
+          if (ul && ul.score < 4 && lead.score >= 4)
+            newNotifications.push({ day: newDay, type: 'score_critical', message: `${lead.name}'s score dropped to ${ul.score} — needs attention` });
         }
       }
 
-      // 5. Commit all state
-      const notifsWithId: Notification[] = newNotifications.map((n, idx) => ({
-        ...n,
-        id: `notif_${newDay}_${idx}`,
-        read: false,
-      }));
-
-      set(s => ({
-        day: newDay,
-        leads: updatedLeads,
-        threadsByLead: threadUpdates,
-        actionsByDay: { ...s.actionsByDay, [newDay]: allDayActions },
-        notifications: [...s.notifications, ...notifsWithId],
-        isAdvancing: false,
-      }));
+      const notifsWithId: Notification[] = newNotifications.map((n, idx) => ({ ...n, id: `notif_${newDay}_${idx}`, read: false }));
+      set(s => ({ day: newDay, leads: updatedLeads, threadsByLead: threadUpdates, actionsByDay: { ...s.actionsByDay, [newDay]: allDayActions }, notifications: [...s.notifications, ...notifsWithId], isAdvancing: false }));
     },
 
     selectLead: (id) => set({ selectedLeadId: id }),

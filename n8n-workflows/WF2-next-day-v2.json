@@ -1,0 +1,323 @@
+{
+  "name": "WF2 — Next Day Engine v2 (AI)",
+  "nodes": [
+    {
+      "parameters": {
+        "httpMethod": "POST",
+        "path": "closeit/next-day",
+        "responseMode": "responseNode",
+        "options": {}
+      },
+      "id": "wf2v2-01",
+      "name": "Webhook",
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 2,
+      "position": [120, 300],
+      "webhookId": "closeit-next-day-v2"
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": { "caseSensitive": true, "typeValidation": "strict", "version": 2 },
+          "conditions": [{
+            "id": "secret-check",
+            "leftValue": "={{ $json.headers['x-webhook-secret'] }}",
+            "rightValue": "closeit_secret_2026",
+            "operator": { "type": "string", "operation": "equals" }
+          }],
+          "combinator": "and"
+        }
+      },
+      "id": "wf2v2-02",
+      "name": "Validate Secret",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.1,
+      "position": [340, 300]
+    },
+    {
+      "parameters": {
+        "respondWith": "json",
+        "responseBody": "={ \"error\": \"unauthorized\" }",
+        "options": { "responseCode": 401 }
+      },
+      "id": "wf2v2-03",
+      "name": "Reject",
+      "type": "n8n-nodes-base.respondToWebhook",
+      "typeVersion": 1.1,
+      "position": [560, 480]
+    },
+    {
+      "parameters": {
+        "jsCode": "// Parse and prepare working state from request body\nconst body = $input.first().json.body;\n\nconst day = body.day ?? 1;\nconst closeItEnabled = body.closeItEnabled !== false;\nconst leads = body.leads ?? [];\nconst threads = body.threads ?? {};\n\n// Stringify existing lead names+emails for dedup check\nconst existingNames = leads.map(l => l.name.toLowerCase());\nconst existingEmails = leads.map(l => l.email.toLowerCase());\n\n// Leads eligible for reply today (not closed/nurture, has been contacted, has thread)\nconst ACTIVE_STATUSES = ['Contacted', 'Awaiting Reply', 'Replied', 'Discovery Booked'];\nconst activeLeads = leads.filter(l => ACTIVE_STATUSES.includes(l.status));\n\n// Random selection for replies: probability based on intentSignal\nconst replyingLeads = activeLeads.filter(lead => {\n  if (lead.status === 'Discovery Booked') return false; // discovery already booked, no generic replies\n  const thread = threads[lead.id] ?? [];\n  const lastMsg = thread[thread.length - 1];\n  if (!lastMsg) return false;\n  // Lead doesn't reply to themselves\n  if (lastMsg.from === 'lead') return false;\n  // Check if enough days have passed since last reply\n  const daysSinceContact = day - (lead.lastReplyDay ?? lead.registeredOnDay);\n  if (daysSinceContact < lead.replyFrequencyDays) return false;\n  // Probability by intent\n  const prob = lead.intentSignal === 'high' ? 0.85 : lead.intentSignal === 'medium' ? 0.55 : 0.25;\n  return Math.random() < prob;\n});\n\n// CloseIt follow-up candidates: leads that are Contacted/Awaiting Reply, no discovery booked yet\n// CloseIt sends 1 follow-up every 2 days, max 4 times\nconst followUpCandidates = closeItEnabled ? leads.filter(lead => {\n  if (!['Contacted', 'Awaiting Reply'].includes(lead.status)) return false;\n  if ((lead.agentFollowUpCount ?? 0) >= 4) return false; // maxed out\n  const lastFollowUp = lead.lastAgentFollowUpDay ?? lead.registeredOnDay;\n  return (day - lastFollowUp) >= 2;\n}) : [];\n\n// Post-MoM nudge: discovery booked + MoM completed + last thread msg is from lead (user hasn't replied)\nconst momNudgeLeads = leads.filter(lead => {\n  if (lead.status !== 'Discovery Booked') return false;\n  const thread = threads[lead.id] ?? [];\n  const lastMsg = thread[thread.length - 1];\n  return lastMsg && lastMsg.from === 'lead';\n});\n\nreturn [{\n  json: {\n    day, closeItEnabled, leads, threads, existingNames, existingEmails,\n    activeLeads, replyingLeads, followUpCandidates, momNudgeLeads\n  }\n}];"
+      },
+      "id": "wf2v2-04",
+      "name": "Parse State",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [560, 300]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "https://api.openai.com/v1/chat/completions",
+        "authentication": "genericCredentialType",
+        "genericAuthType": "httpHeaderAuth",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [{ "name": "Content-Type", "value": "application/json" }]
+        },
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={\n  \"model\": \"gpt-4o-mini\",\n  \"temperature\": 0.9,\n  \"max_tokens\": 1200,\n  \"messages\": [\n    {\n      \"role\": \"system\",\n      \"content\": \"You generate realistic B2B leads for a CRM automation demo. Return ONLY a valid JSON array, no markdown, no explanation.\"\n    },\n    {\n      \"role\": \"user\",\n      \"content\": \"Generate {{ Math.floor(Math.random() * 4) + 2 }} unique B2B leads. Each object must have:\\n- name: full name (realistic, diverse)\\n- company: company name\\n- industry: one of [Sales Consulting, SaaS/Analytics, E-commerce, Legal Services, Manufacturing, Health Tech, Digital Marketing, Fintech, Real Estate, HR Tech]\\n- email: professional email\\n- startType: \\\"cold\\\" (70%) or \\\"warm\\\" (30%)\\n- intentSignal: \\\"high\\\" (30%), \\\"medium\\\" (40%), or \\\"low\\\" (30%)\\n- replyFrequencyDays: integer 2-6\\n- inboundMessage: if warm, a realistic first message to CloseIt (an AI CRM automation platform). If cold, null.\\n\\nExclude these existing names: {{ $json.existingNames.join(', ') }}\\n\\nReturn ONLY the JSON array.\"\n    }\n  ]\n}",
+        "options": {}
+      },
+      "id": "wf2v2-05",
+      "name": "OpenAI: Generate Leads",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [780, 300],
+      "credentials": { "httpHeaderAuth": { "id": "openai-header-auth", "name": "OpenAI API Key" } }
+    },
+    {
+      "parameters": {
+        "jsCode": "const state = $('Parse State').first().json;\nconst day = state.day;\nconst existingNames = state.existingNames ?? [];\nconst existingEmails = state.existingEmails ?? [];\n\n// Parse OpenAI response\nconst raw = $input.first().json.choices?.[0]?.message?.content ?? '[]';\nlet generated = [];\ntry {\n  const cleaned = raw.replace(/```json|```/g, '').trim();\n  generated = JSON.parse(cleaned);\n} catch { generated = []; }\n\n// Dedup and assign IDs\nconst newLeads = generated\n  .filter(l => l.name && !existingNames.includes(l.name.toLowerCase()) && !existingEmails.includes((l.email ?? '').toLowerCase()))\n  .map((l, i) => ({\n    id: `n8n_lead_d${day}_${i}`,\n    name: l.name,\n    company: l.company ?? 'Unknown Co',\n    industry: l.industry ?? 'General',\n    email: l.email ?? `${l.name.toLowerCase().replace(/\\s+/g,'.')}@${(l.company ?? 'co').toLowerCase().replace(/[^a-z]/g,'')}.com`,\n    startType: l.startType ?? 'cold',\n    intentSignal: l.intentSignal ?? 'medium',\n    replyFrequencyDays: Number(l.replyFrequencyDays) || 3,\n    inboundMessage: l.inboundMessage ?? null,\n    score: 6,\n    scoreDelta: 0,\n    status: 'New',\n    registeredOnDay: day,\n    lastReplyDay: null,\n    lastUserReplyDay: null,\n    discoveryCallDay: null,\n    agentFollowUpCount: 0,\n    lastAgentFollowUpDay: null\n  }));\n\nreturn [{ json: { newLeads, day } }];"
+      },
+      "id": "wf2v2-06",
+      "name": "Process New Leads",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [1000, 300]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "https://api.openai.com/v1/chat/completions",
+        "authentication": "genericCredentialType",
+        "genericAuthType": "httpHeaderAuth",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [{ "name": "Content-Type", "value": "application/json" }]
+        },
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={\n  \"model\": \"gpt-4o-mini\",\n  \"temperature\": 0.85,\n  \"max_tokens\": 2000,\n  \"messages\": [\n    {\n      \"role\": \"system\",\n      \"content\": \"You simulate realistic B2B lead email replies for a CRM demo. Be natural, concise (under 80 words each). Return ONLY valid JSON, no markdown.\"\n    },\n    {\n      \"role\": \"user\",\n      \"content\": \"For each lead below, generate their next email reply based on the thread history. Their reply should reflect their intentSignal level.\\n\\nLeads needing replies:\\n{{ JSON.stringify($('Parse State').first().json.replyingLeads.map(l => ({ id: l.id, name: l.name, company: l.company, industry: l.industry, intentSignal: l.intentSignal, thread: ($('Parse State').first().json.threads[l.id] ?? []).map(m => `[${m.from.toUpperCase()}] ${m.body}`).join('\\\\n\\\\n') }))) }}\\n\\nReturn a JSON array: [{ leadId, replyText, containsBookingSignal (true if reply suggests scheduling/agreeing to a call) }]\"\n    }\n  ]\n}",
+        "options": {}
+      },
+      "id": "wf2v2-07",
+      "name": "OpenAI: Generate Lead Replies",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [1000, 480],
+      "credentials": { "httpHeaderAuth": { "id": "openai-header-auth", "name": "OpenAI API Key" } }
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "https://api.openai.com/v1/chat/completions",
+        "authentication": "genericCredentialType",
+        "genericAuthType": "httpHeaderAuth",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [{ "name": "Content-Type", "value": "application/json" }]
+        },
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={\n  \"model\": \"gpt-4o-mini\",\n  \"temperature\": 0.8,\n  \"max_tokens\": 2000,\n  \"messages\": [\n    {\n      \"role\": \"system\",\n      \"content\": \"You are CloseIt, an AI CRM automation assistant. You write professional, natural follow-up emails to book discovery calls. Never sound automated. Return ONLY valid JSON, no markdown.\"\n    },\n    {\n      \"role\": \"user\",\n      \"content\": \"Write discovery call follow-up emails for the following leads. Use the thread history for context. Be specific, reference past conversation, end with a clear ask for a 20-minute call.\\n\\nLeads:\\n{{ JSON.stringify($('Parse State').first().json.followUpCandidates.map(l => ({ id: l.id, name: l.name, company: l.company, industry: l.industry, followUpNum: (l.agentFollowUpCount ?? 0) + 1, thread: ($('Parse State').first().json.threads[l.id] ?? []).map(m => `[${m.from.toUpperCase()}] ${m.body}`).join('\\\\n\\\\n') }))) }}\\n\\nReturn JSON array: [{ leadId, emailBody }] — email body only, under 80 words each.\"\n    }\n  ]\n}",
+        "options": {}
+      },
+      "id": "wf2v2-08",
+      "name": "OpenAI: Generate Follow-ups",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [1000, 660],
+      "credentials": { "httpHeaderAuth": { "id": "openai-header-auth", "name": "OpenAI API Key" } }
+    },
+    {
+      "parameters": {
+        "jsCode": "const state = $('Parse State').first().json;\nconst { day, leads, threads, replyingLeads, followUpCandidates, momNudgeLeads, newLeads: _ } = state;\n\n// Parse lead replies\nconst replyRaw = $('OpenAI: Generate Lead Replies').first().json.choices?.[0]?.message?.content ?? '[]';\nlet replies = [];\ntry { replies = JSON.parse(replyRaw.replace(/```json|```/g,'').trim()); } catch {}\n\n// Parse follow-up emails\nconst fuRaw = $('OpenAI: Generate Follow-ups').first()?.json?.choices?.[0]?.message?.content ?? '[]';\nlet followUpEmails = [];\ntry { followUpEmails = JSON.parse(fuRaw.replace(/```json|```/g,'').trim()); } catch {}\n\nconst newLeads = $('Process New Leads').first().json.newLeads ?? [];\n\n// ── Build outputs ────────────────────────────────────────────────────────────\nconst threadMessages = [];\nconst statusUpdates = [];\nconst agentActions = [];\nconst notifications = [];\nconst tasks = [];\nconst leadUpdates = [];\n\n// 1. New lead arrivals\nfor (const l of newLeads) {\n  notifications.push({ type: 'lead_arrived', message: `New lead: ${l.name} from ${l.company} (${l.startType === 'warm' ? 'warm inbound' : 'cold outreach'})` });\n  if (l.startType === 'warm' && l.inboundMessage) {\n    threadMessages.push({ leadId: l.id, from: 'lead', body: l.inboundMessage, day });\n    statusUpdates.push({ leadId: l.id, status: 'Replied' });\n  }\n}\n\n// 2. Lead replies\nfor (const r of replies) {\n  const lead = replyingLeads.find(l => l.id === r.leadId);\n  if (!lead || !r.replyText) continue;\n  threadMessages.push({ leadId: r.leadId, from: 'lead', body: r.replyText, day });\n  if (r.containsBookingSignal && lead.status !== 'Discovery Booked') {\n    const callDay = day + 1;\n    statusUpdates.push({ leadId: r.leadId, status: 'Discovery Booked', discoveryCallDay: callDay });\n    agentActions.push({ id: `act_${day}_disc_${r.leadId}`, day, type: 'discovery_call_booked', leadId: r.leadId, leadName: lead.name, summary: `Discovery call booked with ${lead.name} (${lead.company}) — Day ${callDay}`, actor: 'ai', detail: { callDay }, timestamp: new Date().toISOString() });\n    tasks.push({ leadId: r.leadId, leadName: lead.name, company: lead.company, callDay });\n    notifications.push({ type: 'call_booked', message: `Discovery call booked with ${lead.name} (${lead.company})` });\n  } else {\n    statusUpdates.push({ leadId: r.leadId, status: 'Replied' });\n  }\n  agentActions.push({ id: `act_${day}_reply_${r.leadId}`, day, type: 'lead_replied', leadId: r.leadId, leadName: lead.name, summary: `${lead.name} replied`, actor: 'lead', detail: { body: r.replyText }, timestamp: new Date().toISOString() });\n}\n\n// 3. CloseIt follow-up emails\nfor (const fu of followUpEmails) {\n  const lead = followUpCandidates.find(l => l.id === fu.leadId);\n  if (!lead || !fu.emailBody) continue;\n  threadMessages.push({ leadId: fu.leadId, from: 'agent', body: fu.emailBody, day });\n  agentActions.push({ id: `act_${day}_fu_${fu.leadId}`, day, type: 'initial_email_sent', leadId: fu.leadId, leadName: lead.name, summary: `Follow-up #${(lead.agentFollowUpCount ?? 0)+1} sent to ${lead.name} — booking discovery call`, actor: 'ai', detail: { body: fu.emailBody, followUpNum: (lead.agentFollowUpCount ?? 0)+1 }, timestamp: new Date().toISOString() });\n  leadUpdates.push({ leadId: fu.leadId, agentFollowUpCount: (lead.agentFollowUpCount ?? 0) + 1, lastAgentFollowUpDay: day });\n  statusUpdates.push({ leadId: fu.leadId, status: 'Awaiting Reply' });\n}\n\n// 4. Initial email for new leads (CloseIt's first touch)\nfor (const l of newLeads) {\n  if (l.startType === 'cold') {\n    // Will be generated in next step — for now just mark the action slot\n    // (We batch this in a separate OpenAI call below; placeholder here)\n    statusUpdates.push({ leadId: l.id, status: 'New' });\n  }\n}\n\n// 5. Post-MoM nudges: remind user that lead replied, their turn\nfor (const lead of momNudgeLeads) {\n  const thread = threads[lead.id] ?? [];\n  const lastMsg = thread[thread.length - 1];\n  notifications.push({ type: 'lead_arrived', message: `⚡ Action needed: ${lead.name} replied after your discovery call. Your response is due.` });\n}\n\n// ── Score all leads (recency + intent + frequency) ────────────────────────\nconst POS_KEYWORDS = ['interested', 'sounds good', 'let\\'s', 'schedule', 'book', 'call', 'demo', 'yes', 'definitely', 'great', 'perfect', 'keen', 'forward', 'available', 'when can', 'happy to'];\nconst NEG_KEYWORDS = ['not interested', 'no thanks', 'unsubscribe', 'remove', 'stop', 'busy', 'later', 'maybe next', 'not right now'];\n\nconst allLeadsForScoring = [...leads, ...newLeads];\nconst scoreUpdates = allLeadsForScoring\n  .filter(l => !['Closed Won','Closed Lost','Nurture'].includes(l.status))\n  .map(lead => {\n    const thread = threads[lead.id] ?? [];\n    const leadMsgs = thread.filter(m => m.from === 'lead');\n    const lastLeadMsg = leadMsgs[leadMsgs.length - 1];\n    const allText = leadMsgs.map(m => m.body.toLowerCase()).join(' ');\n\n    // Intent score (0-4)\n    const posHits = POS_KEYWORDS.filter(k => allText.includes(k)).length;\n    const negHits = NEG_KEYWORDS.filter(k => allText.includes(k)).length;\n    const intentScore = Math.min(4, Math.max(0, posHits - negHits * 2));\n\n    // Recency penalty (-3 to 0)\n    const daysSinceReply = lastLeadMsg ? (day - lastLeadMsg.day) : day;\n    const recencyPenalty = Math.max(-3, -Math.floor(daysSinceReply / lead.replyFrequencyDays));\n\n    // Frequency bonus (0-2)\n    const replyCount = leadMsgs.length;\n    const expectedReplies = Math.max(1, Math.floor(day / lead.replyFrequencyDays));\n    const freqBonus = replyCount >= expectedReplies ? Math.min(2, replyCount - expectedReplies + 1) : 0;\n\n    // Discovery call bonus\n    const callBonus = lead.status === 'Discovery Booked' ? 2 : 0;\n\n    const newScore = Math.min(10, Math.max(0, 6 + intentScore + recencyPenalty + freqBonus + callBonus));\n    const delta = newScore - (lead.score ?? 6);\n\n    if (newScore < 4 && (lead.score ?? 6) >= 4) {\n      notifications.push({ type: 'score_critical', message: `${lead.name}'s score dropped to ${newScore} — needs attention` });\n    }\n\n    return { leadId: lead.id, score: newScore, delta };\n  });\n\nreturn [{ json: { newLeads, threadMessages, scoreUpdates, statusUpdates, leadUpdates, agentActions, notifications, tasks } }];"
+      },
+      "id": "wf2v2-09",
+      "name": "Assemble Response",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [1220, 480]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "https://api.openai.com/v1/chat/completions",
+        "authentication": "genericCredentialType",
+        "genericAuthType": "httpHeaderAuth",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [{ "name": "Content-Type", "value": "application/json" }]
+        },
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={\n  \"model\": \"gpt-4o-mini\",\n  \"temperature\": 0.85,\n  \"max_tokens\": 2500,\n  \"messages\": [\n    {\n      \"role\": \"system\",\n      \"content\": \"You are CloseIt, an AI CRM automation platform. Write the first outreach email to new cold leads, or the first response to warm inbound leads. Sound like a knowledgeable, helpful human — not a bot. Emails should be short (under 80 words). Return ONLY valid JSON, no markdown.\"\n    },\n    {\n      \"role\": \"user\",\n      \"content\": \"Write initial contact emails for these new leads. For cold leads: introduce CloseIt (an AI automation platform that streamlines CRM follow-ups), mention their industry context, ask one specific hook question. For warm leads: acknowledge their inbound message and ask 4 discovery questions (budget, timeline, current tooling, main pain point).\\n\\nLeads:\\n{{ JSON.stringify($('Assemble Response').first().json.newLeads.map(l => ({ id: l.id, name: l.name, company: l.company, industry: l.industry, startType: l.startType, inboundMessage: l.inboundMessage }))) }}\\n\\nReturn JSON array: [{ leadId, emailBody }]\"\n    }\n  ]\n}",
+        "options": {}
+      },
+      "id": "wf2v2-10",
+      "name": "OpenAI: Initial Emails",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [1440, 300],
+      "credentials": { "httpHeaderAuth": { "id": "openai-header-auth", "name": "OpenAI API Key" } }
+    },
+    {
+      "parameters": {
+        "jsCode": "const assembled = $('Assemble Response').first().json;\nconst initialRaw = $('OpenAI: Initial Emails').first().json.choices?.[0]?.message?.content ?? '[]';\nlet initialEmails = [];\ntry { initialEmails = JSON.parse(initialRaw.replace(/```json|```/g,'').trim()); } catch {}\n\nconst day = $('Parse State').first().json.day;\n\n// Merge initial emails into threadMessages + agentActions\nconst extraMessages = [];\nconst extraActions = [];\nconst extraStatusUpdates = [];\n\nfor (const ie of initialEmails) {\n  const lead = assembled.newLeads.find(l => l.id === ie.leadId);\n  if (!lead || !ie.emailBody) continue;\n  extraMessages.push({ leadId: ie.leadId, from: 'agent', body: ie.emailBody, day });\n  extraStatusUpdates.push({ leadId: ie.leadId, status: 'Contacted' });\n  extraActions.push({\n    id: `act_${day}_init_${ie.leadId}`,\n    day,\n    type: 'initial_email_sent',\n    leadId: ie.leadId,\n    leadName: lead.name,\n    summary: `Initial ${lead.startType === 'warm' ? 'warm response' : 'cold outreach'} sent to ${lead.name} (${lead.company})`,\n    actor: 'ai',\n    detail: { body: ie.emailBody, startType: lead.startType },\n    timestamp: new Date().toISOString()\n  });\n}\n\nconst finalResult = {\n  newLeads: assembled.newLeads,\n  threadMessages: [...assembled.threadMessages, ...extraMessages],\n  scoreUpdates: assembled.scoreUpdates,\n  statusUpdates: [...assembled.statusUpdates, ...extraStatusUpdates],\n  leadUpdates: assembled.leadUpdates,\n  agentActions: [...assembled.agentActions, ...extraActions],\n  notifications: assembled.notifications,\n  tasks: assembled.tasks\n};\n\nreturn [{ json: finalResult }];"
+      },
+      "id": "wf2v2-11",
+      "name": "Merge Initial Emails",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [1660, 300]
+    },
+    {
+      "parameters": {
+        "operation": "append",
+        "documentId": { "mode": "id", "value": "12jrapE2Qnmvb9DbVDnLVuAwnzgQOUnWEq9ESrOhXcdQ" },
+        "sheetName": { "mode": "name", "value": "Activity Log" },
+        "columns": {
+          "mappingMode": "autoMapInputData",
+          "value": {}
+        },
+        "options": {}
+      },
+      "id": "wf2v2-12",
+      "name": "Log to Sheets",
+      "type": "n8n-nodes-base.googleSheets",
+      "typeVersion": 4.5,
+      "position": [1880, 300],
+      "credentials": { "googleSheetsOAuth2Api": { "id": "google-sheets-cred", "name": "Google Sheets" } }
+    },
+    {
+      "parameters": {
+        "jsCode": "// Prepare flat rows for Activity Log\nconst result = $('Merge Initial Emails').first().json;\nconst day = $('Parse State').first().json.day;\nconst rows = [];\n\nfor (const msg of result.threadMessages ?? []) {\n  rows.push({ day, leadId: msg.leadId, action_type: `message_${msg.from}`, actor: msg.from, summary: msg.body.substring(0,100), detail_json: JSON.stringify(msg), timestamp: new Date().toISOString() });\n}\nfor (const a of result.agentActions ?? []) {\n  rows.push({ day, leadId: a.leadId, action_type: a.type, actor: a.actor, summary: a.summary, detail_json: JSON.stringify(a.detail), timestamp: a.timestamp });\n}\n\nreturn rows.length ? rows.map(r => ({ json: r })) : [{ json: { day, action_type: 'no_op', actor: 'system', summary: 'No actions this day', timestamp: new Date().toISOString() } }];"
+      },
+      "id": "wf2v2-13",
+      "name": "Prep Log Rows",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [1880, 480]
+    },
+    {
+      "parameters": {
+        "operation": "append",
+        "documentId": { "mode": "id", "value": "12jrapE2Qnmvb9DbVDnLVuAwnzgQOUnWEq9ESrOhXcdQ" },
+        "sheetName": { "mode": "name", "value": "Activity Log" },
+        "columns": { "mappingMode": "autoMapInputData", "value": {} },
+        "options": {}
+      },
+      "id": "wf2v2-14",
+      "name": "Write Activity Log",
+      "type": "n8n-nodes-base.googleSheets",
+      "typeVersion": 4.5,
+      "position": [2100, 480],
+      "credentials": { "googleSheetsOAuth2Api": { "id": "google-sheets-cred", "name": "Google Sheets" } }
+    },
+    {
+      "parameters": {
+        "respondWith": "json",
+        "responseBody": "={{ JSON.stringify($('Merge Initial Emails').first().json) }}",
+        "options": { "responseCode": 200 }
+      },
+      "id": "wf2v2-15",
+      "name": "Respond",
+      "type": "n8n-nodes-base.respondToWebhook",
+      "typeVersion": 1.1,
+      "position": [2100, 300]
+    },
+    {
+      "parameters": {},
+      "id": "wf2v2-16",
+      "name": "Error Trigger",
+      "type": "n8n-nodes-base.errorTrigger",
+      "typeVersion": 1,
+      "position": [120, 600]
+    },
+    {
+      "parameters": {
+        "operation": "append",
+        "documentId": { "mode": "id", "value": "12jrapE2Qnmvb9DbVDnLVuAwnzgQOUnWEq9ESrOhXcdQ" },
+        "sheetName": { "mode": "name", "value": "Error Log" },
+        "columns": {
+          "mappingMode": "defineBelow",
+          "value": {
+            "workflow": "WF2-next-day-v2",
+            "node": "={{ $json.execution.lastNodeExecuted }}",
+            "error_message": "={{ $json.error.message }}",
+            "day": "={{ $now.toISO() }}",
+            "timestamp": "={{ $now.toISO() }}",
+            "resolved": "false"
+          }
+        },
+        "options": {}
+      },
+      "id": "wf2v2-17",
+      "name": "Log Error",
+      "type": "n8n-nodes-base.googleSheets",
+      "typeVersion": 4.5,
+      "position": [340, 600],
+      "credentials": { "googleSheetsOAuth2Api": { "id": "google-sheets-cred", "name": "Google Sheets" } }
+    }
+  ],
+  "connections": {
+    "Webhook": {
+      "main": [[{ "node": "Validate Secret", "type": "main", "index": 0 }]]
+    },
+    "Validate Secret": {
+      "main": [
+        [{ "node": "Parse State", "type": "main", "index": 0 }],
+        [{ "node": "Reject", "type": "main", "index": 0 }]
+      ]
+    },
+    "Parse State": {
+      "main": [[
+        { "node": "OpenAI: Generate Leads", "type": "main", "index": 0 },
+        { "node": "OpenAI: Generate Lead Replies", "type": "main", "index": 0 },
+        { "node": "OpenAI: Generate Follow-ups", "type": "main", "index": 0 }
+      ]]
+    },
+    "OpenAI: Generate Leads": {
+      "main": [[{ "node": "Process New Leads", "type": "main", "index": 0 }]]
+    },
+    "Process New Leads": {
+      "main": [[{ "node": "Assemble Response", "type": "main", "index": 0 }]]
+    },
+    "OpenAI: Generate Lead Replies": {
+      "main": [[{ "node": "Assemble Response", "type": "main", "index": 0 }]]
+    },
+    "OpenAI: Generate Follow-ups": {
+      "main": [[{ "node": "Assemble Response", "type": "main", "index": 0 }]]
+    },
+    "Assemble Response": {
+      "main": [[{ "node": "OpenAI: Initial Emails", "type": "main", "index": 0 }]]
+    },
+    "OpenAI: Initial Emails": {
+      "main": [[{ "node": "Merge Initial Emails", "type": "main", "index": 0 }]]
+    },
+    "Merge Initial Emails": {
+      "main": [[
+        { "node": "Respond", "type": "main", "index": 0 },
+        { "node": "Prep Log Rows", "type": "main", "index": 0 }
+      ]]
+    },
+    "Prep Log Rows": {
+      "main": [[{ "node": "Write Activity Log", "type": "main", "index": 0 }]]
+    },
+    "Error Trigger": {
+      "main": [[{ "node": "Log Error", "type": "main", "index": 0 }]]
+    }
+  },
+  "settings": {
+    "executionOrder": "v1",
+    "saveExecutionProgress": true,
+    "callerPolicy": "workflowsFromSameOwner",
+    "errorWorkflow": ""
+  },
+  "staticData": null,
+  "tags": ["closeit", "demo"],
+  "pinData": {}
+}
