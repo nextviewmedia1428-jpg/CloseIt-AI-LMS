@@ -1,39 +1,50 @@
-export type LeadClassification = 'Hot' | 'Warm' | 'Cold';
+export type LeadStartType = 'cold' | 'warm';
+
 export type LeadStatus =
-  | 'New' | 'Contacted' | 'Awaiting Reply' | 'Replied'
-  | 'Meeting Scheduled' | 'Nurture' | 'Closed Won' | 'Closed Lost';
+  | 'New'
+  | 'Contacted'         // CloseIt sent first email
+  | 'Awaiting Reply'    // ball is with lead
+  | 'Replied'           // lead replied, ball is with user
+  | 'Discovery Booked'  // discovery call scheduled, task pending
+  | 'Nurture'
+  | 'Closed Won'
+  | 'Closed Lost';
 
 export interface Lead {
   id: string;
   name: string;
   email: string;
-  phone?: string;
-  company?: string;
-  projectName: string;
-  projectDescription: string;
-  source: 'simulator_form';
-  formInputs: {
-    budget: number;
-    timelineDays: number;
-  };
+  company: string;
+  industry: string;
+  startType: LeadStartType;
+  // warm-start leads have an initial inbound message
+  inboundMessage?: string;
   intentSignal: 'low' | 'medium' | 'high';
-  score: number;
-  classification: LeadClassification;
+  // scores are re-computed at the start of every day
+  score: number;           // 0–10, starts at 6
+  scoreDelta: number;      // +/- vs yesterday, for badge animation
   status: LeadStatus;
-  remindersSent: number;
-  nextReminderDay: number | null;
   registeredOnDay: number;
-  lastActionDay: number;
+  lastReplyDay: number | null;    // last day lead sent a message
+  lastUserReplyDay: number | null; // last day user sent a message
+  replyFrequencyDays: number;     // expected reply cadence (2–6), seeded per lead
+  discoveryCallDay: number | null;
   threadSummary?: string;
-  assignedRep: string;
 }
 
 export type ActionType =
-  | 'email_sent' | 'score_update' | 'reply_received' | 'meeting_scheduled'
-  | 'rep_assigned' | 'proposal_sent' | 'call_logged' | 'closed_won'
-  | 'closed_lost' | 'moved_to_nurture' | 'staff_nudge' | 'meeting_minutes' | 'error';
+  | 'initial_email_sent'     // CloseIt's one autonomous email per lead
+  | 'discovery_call_booked'  // agent detects agreement and books the call
+  | 'lead_arrived'           // warm-start: lead's inbound message
+  | 'lead_replied'           // any subsequent lead reply
+  | 'user_replied'           // user sent a message via compose
+  | 'score_updated'          // silent daily score recompute
+  | 'closed_won'
+  | 'closed_lost'
+  | 'moved_to_nurture'
+  | 'error';
 
-export type ActionActor = 'system' | 'ai' | 'team' | 'customer';
+export type ActionActor = 'system' | 'ai' | 'user' | 'lead';
 
 export interface Action {
   id: string;
@@ -47,17 +58,34 @@ export interface Action {
   timestamp: string;
 }
 
-export interface SimulatorConfig {
-  scoring: {
-    budgetWeight: number;
-    intentWeight: number;
-    timelineWeight: number;
-  };
-  reminders: {
-    frequencyDays: number;
-    maxReminders: number;
-  };
+// A message in the thread panel
+export interface ThreadMessage {
+  id: string;
+  day: number;
+  from: 'agent' | 'lead' | 'user';
+  body: string;
+  timestamp: string;
 }
 
-export const STAFF_POOL = ['Arjun', 'Priya', 'Sam'] as const;
-export type StaffName = typeof STAFF_POOL[number];
+export interface OpenTask {
+  leadId: string;
+  leadName: string;
+  company: string;
+  callDay: number;
+  status: 'pending' | 'completed';
+  mom?: string;
+}
+
+export interface Notification {
+  id: string;
+  day: number;
+  type: 'lead_arrived' | 'score_critical' | 'call_booked' | 'closed_won' | 'closed_lost';
+  message: string;
+  read: boolean;
+}
+
+export interface SimulatorState {
+  closeItEnabled: boolean;
+  winCount: number;
+  lossCount: number;
+}

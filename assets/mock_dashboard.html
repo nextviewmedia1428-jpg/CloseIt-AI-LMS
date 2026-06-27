@@ -1,0 +1,1073 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<title>CloseIt — Lead Nurturing Dashboard</title>
+<style>
+  :root {
+    --bg: #FAF7F2;
+    --surface: #F0EDE6;
+    --surface-2: #F5F2EC;
+    --surface-3: #EAE6DE;
+    --border: rgba(34,31,26,0.09);
+    --border-soft: rgba(34,31,26,0.06);
+    --border-med: rgba(34,31,26,0.13);
+    --text: #221F1A;
+    --text-secondary: #5C5751;
+    --text-muted: #9A958F;
+    --pulse: #7C5CFF;
+    --pulse-soft: rgba(124,92,255,0.10);
+    --pulse-border: rgba(124,92,255,0.25);
+    --amber: #FFB627;
+    --amber-soft: rgba(255,182,39,0.12);
+    --amber-border: rgba(255,182,39,0.35);
+    --signal: #2F9E44;
+    --signal-soft: rgba(47,158,68,0.12);
+    --ember: #FF5A36;
+    --ember-soft: rgba(255,90,54,0.10);
+    --ember-border: rgba(255,90,54,0.30);
+    --glacier: #3E7CB1;
+    --glacier-soft: rgba(62,124,177,0.10);
+  }
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  body {
+    font-family: -apple-system, BlinkMacSystemFont, "Inter", "Segoe UI", Helvetica, Arial, sans-serif;
+    background: #E8E4DC;
+    color: var(--text);
+    display: flex;
+    justify-content: center;
+    padding: 32px 16px;
+  }
+  .browser {
+    width: 100%;
+    max-width: 1360px;
+    border-radius: 14px;
+    overflow: hidden;
+    box-shadow: 0 24px 64px rgba(34,31,26,0.18), 0 0 0 1px rgba(34,31,26,0.10);
+    background: var(--bg);
+  }
+  .chrome {
+    height: 40px;
+    background: #E2DDD6;
+    display: flex;
+    align-items: center;
+    gap: 18px;
+    padding: 0 14px;
+    border-bottom: 1px solid rgba(34,31,26,0.08);
+  }
+  .dots { display: flex; gap: 8px; }
+  .dot { width: 11px; height: 11px; border-radius: 50%; }
+  .dot.r { background: #FF5F57; } .dot.y { background: #FEBC2E; } .dot.g { background: #28C840; }
+  .addr {
+    flex: 1;
+    max-width: 480px;
+    background: #D8D3CB;
+    border-radius: 7px;
+    height: 24px;
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    padding: 0 10px;
+    color: var(--text-muted);
+    font-size: 12px;
+  }
+  .addr svg { width: 11px; height: 11px; opacity: .6; }
+  .app {
+    display: flex;
+    flex-direction: column;
+    height: 880px;
+    background: var(--bg);
+  }
+
+  /* NAVBAR */
+  .navbar {
+    height: 54px;
+    flex: 0 0 54px;
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    padding: 0 22px;
+    background: var(--surface-2);
+    border-bottom: 1px solid var(--border-soft);
+    position: relative;
+    z-index: 5;
+  }
+  .wordmark {
+    font-size: 16px;
+    font-weight: 700;
+    letter-spacing: -0.3px;
+    color: var(--text);
+  }
+  .wordmark span { color: var(--pulse); }
+  .nav-right {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+  }
+  .day-section {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    padding-right: 12px;
+    border-right: 1px solid var(--border-med);
+    margin-right: 4px;
+  }
+  .day-counter { text-align: right; }
+  .day-counter .lbl {
+    font-size: 10px;
+    color: var(--text-muted);
+    text-transform: uppercase;
+    letter-spacing: .06em;
+  }
+  .day-counter .num {
+    font-family: ui-monospace, "SF Mono", "JetBrains Mono", Consolas, monospace;
+    font-size: 18px;
+    font-weight: 700;
+    line-height: 1;
+    color: var(--text);
+  }
+  .next-day {
+    border: none;
+    cursor: pointer;
+    background: var(--pulse);
+    color: #fff;
+    font-size: 12.5px;
+    font-weight: 600;
+    padding: 8px 16px;
+    border-radius: 999px;
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    box-shadow: 0 1px 0 rgba(124,92,255,0.3);
+  }
+  .notif-btn {
+    position: relative;
+    background: var(--surface-3);
+    border: 1px solid var(--border-med);
+    border-radius: 10px;
+    width: 36px;
+    height: 36px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    cursor: pointer;
+    color: var(--text-secondary);
+  }
+  .notif-btn svg { width: 17px; height: 17px; }
+  .notif-badge {
+    position: absolute;
+    top: -4px;
+    right: -4px;
+    background: var(--ember);
+    color: #fff;
+    font-size: 9px;
+    font-weight: 700;
+    width: 16px;
+    height: 16px;
+    border-radius: 50%;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    border: 2px solid var(--bg);
+  }
+  .closeit-toggle {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    background: var(--signal-soft);
+    border: 1px solid rgba(47,158,68,0.25);
+    border-radius: 999px;
+    padding: 6px 12px;
+    cursor: pointer;
+    font-size: 12px;
+    font-weight: 600;
+    color: var(--signal);
+  }
+  .closeit-toggle .dot-live {
+    width: 7px;
+    height: 7px;
+    border-radius: 50%;
+    background: var(--signal);
+  }
+
+  /* DISABLED STATE BANNER */
+  .disabled-banner {
+    display: none;
+    background: var(--amber-soft);
+    border-bottom: 1px solid var(--amber-border);
+    padding: 8px 22px;
+    font-size: 12px;
+    color: #7A5500;
+    font-weight: 500;
+    align-items: center;
+    gap: 8px;
+  }
+  .disabled-banner svg { width: 14px; height: 14px; opacity: .8; }
+
+  /* MAIN BODY */
+  .body {
+    flex: 1;
+    display: flex;
+    min-height: 0;
+  }
+
+  /* SIDEBAR */
+  .sidebar {
+    width: 248px;
+    flex: 0 0 248px;
+    border-right: 1px solid var(--border-soft);
+    background: var(--surface-2);
+    display: flex;
+    flex-direction: column;
+    min-height: 0;
+  }
+  .sidebar-head {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    padding: 14px 16px 10px;
+    flex: 0 0 auto;
+    border-bottom: 1px solid var(--border-soft);
+  }
+  .sidebar-head h2 { font-size: 13px; font-weight: 700; color: var(--text); }
+  .count-badge {
+    background: var(--pulse-soft);
+    color: var(--pulse);
+    font-size: 11px;
+    font-weight: 700;
+    padding: 2px 8px;
+    border-radius: 999px;
+  }
+  .lead-list {
+    flex: 1;
+    overflow-y: auto;
+    padding: 10px 10px 12px;
+    display: flex;
+    flex-direction: column;
+    gap: 7px;
+  }
+  .lead-card {
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-left: 3px solid transparent;
+    border-radius: 12px;
+    padding: 11px 12px;
+    cursor: pointer;
+    transition: border-color .12s;
+  }
+  .lead-card:hover { border-color: var(--border-med); border-left-color: transparent; }
+  .lead-card.active {
+    border-color: var(--pulse-border);
+    border-left-color: var(--pulse);
+    background: var(--pulse-soft);
+  }
+  .lead-card.critical {
+    border-color: var(--ember-border);
+    border-left-color: var(--ember);
+    background: var(--ember-soft);
+  }
+  .lead-card .top-row {
+    display: flex;
+    align-items: flex-start;
+    justify-content: space-between;
+    gap: 6px;
+  }
+  .lead-card .name { font-size: 13px; font-weight: 600; color: var(--text); }
+  .lead-card .company { font-size: 11px; color: var(--text-muted); margin-top: 1px; }
+  .lead-card .row2 {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    margin-top: 9px;
+  }
+  .critical-warn {
+    font-size: 10px;
+    color: var(--ember);
+    font-weight: 600;
+    display: flex;
+    align-items: center;
+    gap: 3px;
+    margin-top: 5px;
+  }
+  .critical-warn svg { width: 11px; height: 11px; }
+  .pill {
+    font-size: 10px;
+    font-weight: 600;
+    padding: 3px 8px;
+    border-radius: 999px;
+    white-space: nowrap;
+  }
+  .pill.new { background: rgba(34,31,26,0.07); color: var(--text-secondary); }
+  .pill.convo { background: var(--glacier-soft); color: var(--glacier); }
+  .pill.awaiting { background: var(--amber-soft); color: #8A5E00; }
+  .pill.booked { background: var(--signal-soft); color: #1A5E28; }
+  .pill.nurture { background: var(--pulse-soft); color: var(--pulse); }
+  .pill.critical { background: var(--ember-soft); color: #9A2810; }
+  .score {
+    font-size: 10px;
+    font-weight: 700;
+    padding: 3px 8px;
+    border-radius: 999px;
+    margin-left: auto;
+    white-space: nowrap;
+  }
+  .score.hot { background: rgba(255,90,54,0.15); color: #9A2810; }
+  .score.warm { background: rgba(255,182,39,0.15); color: #7A5500; }
+  .score.mid { background: rgba(124,92,255,0.12); color: #4B38B0; }
+  .score.low { background: rgba(34,31,26,0.07); color: var(--text-secondary); }
+  .score.critical-score { background: var(--ember-soft); color: var(--ember); border: 1px solid var(--ember-border); }
+  .lead-card .stamp {
+    font-size: 10px;
+    color: var(--text-muted);
+    margin-top: 7px;
+    font-family: ui-monospace, "SF Mono", Consolas, monospace;
+  }
+
+  /* CENTER */
+  .center {
+    flex: 1;
+    display: flex;
+    flex-direction: column;
+    min-height: 0;
+    min-width: 0;
+  }
+  .thread-head {
+    flex: 0 0 auto;
+    padding: 14px 22px;
+    border-bottom: 1px solid var(--border-soft);
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    background: var(--surface-2);
+  }
+  .thread-head .name { font-size: 14.5px; font-weight: 700; color: var(--text); }
+  .thread-head .company { font-size: 12px; color: var(--text-muted); margin-top: 1px; }
+  .thread-head .override-btn {
+    margin-left: auto;
+    background: transparent;
+    border: 1px solid var(--border-med);
+    border-radius: 8px;
+    padding: 5px 12px;
+    font-size: 11.5px;
+    font-weight: 600;
+    color: var(--text-secondary);
+    cursor: pointer;
+  }
+  .thread {
+    flex: 1;
+    overflow-y: auto;
+    padding: 20px 22px;
+    display: flex;
+    flex-direction: column;
+    gap: 13px;
+    background: var(--bg);
+  }
+  .msg {
+    max-width: 62%;
+    border-radius: 12px;
+    padding: 11px 14px;
+  }
+  .msg .meta {
+    display: flex;
+    justify-content: space-between;
+    gap: 10px;
+    font-size: 10.5px;
+    font-weight: 700;
+    margin-bottom: 5px;
+  }
+  .msg .day {
+    font-weight: 400;
+    color: var(--text-muted);
+    font-family: ui-monospace, "SF Mono", Consolas, monospace;
+  }
+  .msg p { font-size: 13px; line-height: 1.55; color: var(--text); }
+  .msg.agent {
+    align-self: flex-start;
+    background: var(--pulse-soft);
+    border: 1px solid var(--pulse-border);
+  }
+  .msg.agent .meta { color: var(--pulse); }
+  .msg.lead {
+    align-self: flex-end;
+    background: var(--surface);
+    border: 1px solid var(--border-med);
+  }
+  .msg.lead .meta { color: var(--text-secondary); }
+  .msg.you {
+    align-self: flex-start;
+    background: var(--glacier-soft);
+    border: 1px solid rgba(62,124,177,0.22);
+  }
+  .msg.you .meta { color: var(--glacier); }
+
+  /* LOCKED STATE */
+  .locked-overlay {
+    display: none;
+    background: rgba(250,247,242,0.82);
+    border-top: 1px solid var(--amber-border);
+    flex: 0 0 auto;
+    padding: 18px 22px;
+    align-items: center;
+    gap: 14px;
+    backdrop-filter: blur(4px);
+  }
+  .locked-overlay .lock-icon {
+    width: 38px;
+    height: 38px;
+    border-radius: 10px;
+    background: var(--amber-soft);
+    border: 1px solid var(--amber-border);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    flex: 0 0 auto;
+  }
+  .locked-overlay .lock-icon svg { width: 18px; height: 18px; color: var(--amber); }
+  .locked-overlay .lock-text { flex: 1; }
+  .locked-overlay .lock-text p { font-size: 13px; font-weight: 600; color: var(--text); }
+  .locked-overlay .lock-text span { font-size: 12px; color: var(--text-secondary); }
+
+  /* COMPOSE */
+  .compose {
+    flex: 0 0 auto;
+    border-top: 1px solid var(--border-soft);
+    background: var(--surface-2);
+    padding: 13px 22px 16px;
+  }
+  .compose-box {
+    width: 100%;
+    background: var(--surface);
+    border: 1px solid var(--border-med);
+    border-radius: 12px;
+    padding: 11px 13px;
+    color: var(--text);
+    font-size: 13px;
+    font-family: inherit;
+    resize: none;
+    height: 56px;
+    outline: none;
+  }
+  .compose-box::placeholder { color: var(--text-muted); }
+  .compose-actions {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    margin-top: 9px;
+  }
+  .compose-hint { font-size: 11px; color: var(--text-muted); }
+  .compose-btns { display: flex; gap: 8px; }
+  .btn {
+    border: none;
+    cursor: pointer;
+    font-size: 12px;
+    font-weight: 600;
+    padding: 8px 15px;
+    border-radius: 10px;
+  }
+  .btn.gen { background: var(--pulse-soft); color: var(--pulse); border: 1px solid var(--pulse-border); }
+  .btn.send { background: var(--pulse); color: #fff; }
+
+  /* RIGHT PANEL */
+  .right {
+    width: 272px;
+    flex: 0 0 272px;
+    border-left: 1px solid var(--border-soft);
+    background: var(--surface-2);
+    display: flex;
+    flex-direction: column;
+    min-height: 0;
+  }
+  .panel-label {
+    font-size: 11px;
+    font-weight: 700;
+    color: var(--text-secondary);
+    text-transform: uppercase;
+    letter-spacing: .05em;
+    padding: 14px 16px 8px;
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    border-bottom: 1px solid var(--border-soft);
+    flex: 0 0 auto;
+  }
+  .panel-label .dot-live {
+    width: 6px;
+    height: 6px;
+    border-radius: 50%;
+    background: var(--signal);
+    margin-left: auto;
+  }
+  .agent-feed {
+    flex: 1;
+    overflow-y: auto;
+    padding: 8px 12px;
+    display: flex;
+    flex-direction: column;
+    gap: 2px;
+  }
+  .feed-item {
+    display: flex;
+    align-items: flex-start;
+    gap: 9px;
+    padding: 8px 10px;
+    border-radius: 10px;
+  }
+  .feed-item:hover { background: var(--surface-3); }
+  .feed-dot {
+    width: 7px;
+    height: 7px;
+    border-radius: 50%;
+    margin-top: 5px;
+    flex: 0 0 auto;
+  }
+  .feed-dot.mail { background: var(--signal); }
+  .feed-dot.nudge { background: var(--amber); }
+  .feed-dot.booked { background: var(--pulse); }
+  .feed-item p { font-size: 12px; line-height: 1.45; color: var(--text); }
+  .feed-item .fstamp {
+    font-size: 10px;
+    color: var(--text-muted);
+    font-family: ui-monospace, "SF Mono", Consolas, monospace;
+    display: block;
+    margin-top: 2px;
+  }
+  .feed-day-header {
+    font-size: 10px;
+    font-weight: 700;
+    text-transform: uppercase;
+    letter-spacing: .06em;
+    color: var(--text-muted);
+    padding: 6px 10px 4px;
+  }
+  .feed-empty {
+    font-size: 11px;
+    color: var(--text-muted);
+    padding: 10px 10px 4px;
+    font-style: italic;
+  }
+  .start-badge {
+    font-size: 10px;
+    font-weight: 700;
+    padding: 3px 9px;
+    border-radius: 999px;
+    white-space: nowrap;
+    flex-shrink: 0;
+  }
+  .start-badge.cold { background: var(--glacier-soft); color: var(--glacier); }
+  .start-badge.warm { background: rgba(47,158,68,0.12); color: #1A5E28; }
+
+  /* TASK SECTION */
+  .task-section {
+    flex: 0 0 auto;
+    border-top: 1px solid var(--border-soft);
+  }
+  .task-label {
+    font-size: 11px;
+    font-weight: 700;
+    color: var(--text-secondary);
+    text-transform: uppercase;
+    letter-spacing: .05em;
+    padding: 12px 16px 8px;
+    display: flex;
+    align-items: center;
+    gap: 6px;
+  }
+  .task-card {
+    margin: 0 12px 12px;
+    background: var(--surface);
+    border: 1px solid var(--amber-border);
+    border-radius: 12px;
+    padding: 12px 13px;
+    box-shadow: 0 0 0 3px rgba(255,182,39,0.08);
+  }
+  .task-card .title { font-size: 13px; font-weight: 700; color: var(--text); margin-bottom: 5px; }
+  .task-card .trow {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    font-size: 11.5px;
+    color: var(--text-secondary);
+    margin-bottom: 5px;
+  }
+  .task-card .trow svg { width: 13px; height: 13px; opacity: .7; flex: 0 0 auto; }
+  .complete-btn {
+    width: 100%;
+    background: var(--amber);
+    color: #5A3800;
+    font-weight: 700;
+    font-size: 12px;
+    border: none;
+    padding: 9px 0;
+    border-radius: 9px;
+    cursor: pointer;
+    margin-top: 4px;
+  }
+
+  /* STATS */
+  .stats-section {
+    flex: 0 0 auto;
+    border-top: 1px solid var(--border-soft);
+    padding: 12px 16px;
+  }
+  .stats-label {
+    font-size: 11px;
+    font-weight: 700;
+    color: var(--text-secondary);
+    text-transform: uppercase;
+    letter-spacing: .05em;
+    margin-bottom: 8px;
+  }
+  .stats-grid {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 6px;
+  }
+  .stat-cell {
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: 10px;
+    padding: 8px 10px;
+  }
+  .stat-cell .sv { font-size: 18px; font-weight: 700; color: var(--text); line-height: 1; }
+  .stat-cell .sl { font-size: 10px; color: var(--text-muted); margin-top: 2px; }
+</style>
+</head>
+<body>
+
+<div class="browser">
+  <div class="chrome">
+    <div class="dots">
+      <span class="dot r"></span><span class="dot y"></span><span class="dot g"></span>
+    </div>
+    <div class="addr">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+        <rect x="5" y="11" width="14" height="9" rx="2"/>
+        <path d="M8 11V7a4 4 0 1 1 8 0v4"/>
+      </svg>
+      app.closeit.ai/dashboard
+    </div>
+  </div>
+
+  <div class="app">
+
+    <!-- NAVBAR -->
+    <div class="navbar">
+      <div class="wordmark">Close<span>It</span></div>
+
+      <div class="nav-right">
+        <div class="day-section">
+          <div class="day-counter">
+            <div class="lbl">Current</div>
+            <div class="num">Day 8</div>
+          </div>
+          <button class="next-day">Next Day →</button>
+        </div>
+
+        <!-- Notification bell -->
+        <button class="notif-btn" title="Notifications">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+            <path d="M18 8A6 6 0 0 0 6 8c0 7-3 9-3 9h18s-3-2-3-9"/>
+            <path d="M13.73 21a2 2 0 0 1-3.46 0"/>
+          </svg>
+          <span class="notif-badge">3</span>
+        </button>
+
+        <!-- CloseIt toggle ON -->
+        <button class="closeit-toggle" id="ci-toggle" onclick="toggleCloseIt()">
+          <span class="dot-live" id="ci-dot"></span>
+          <span id="ci-label">CloseIt: On</span>
+        </button>
+      </div>
+    </div>
+
+    <!-- Disabled banner (shown when CloseIt is off) -->
+    <div class="disabled-banner" id="disabled-banner">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+        <circle cx="12" cy="12" r="10"/><line x1="12" y1="8" x2="12" y2="12"/><line x1="12" y1="16" x2="12.01" y2="16"/>
+      </svg>
+      CloseIt is disabled — you are managing all follow-ups manually. No AI mails or nudges will fire.
+    </div>
+
+    <!-- MAIN BODY -->
+    <div class="body">
+
+      <!-- SIDEBAR -->
+      <div class="sidebar">
+        <div class="sidebar-head">
+          <h2>Leads</h2>
+          <span class="count-badge">7</span>
+        </div>
+        <div class="lead-list">
+
+          <!-- Critical lead -->
+          <div class="lead-card critical">
+            <div class="top-row">
+              <div>
+                <div class="name">Devon Cole</div>
+                <div class="company">Coastline Goods</div>
+              </div>
+            </div>
+            <div class="row2">
+              <span class="pill critical">Critical</span>
+              <span class="score critical-score">3/10</span>
+            </div>
+            <div class="critical-warn">
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5">
+                <path d="M10.29 3.86L1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z"/>
+                <line x1="12" y1="9" x2="12" y2="13"/><line x1="12" y1="17" x2="12.01" y2="17"/>
+              </svg>
+              Needs your attention — 6 days silent
+            </div>
+            <div class="stamp">Day 2</div>
+          </div>
+
+          <!-- Active lead -->
+          <div class="lead-card active" data-lead="marcus" onclick="loadThread('marcus')">
+            <div class="name">Marcus Webb</div>
+            <div class="company">Webb &amp; Co</div>
+            <div class="row2">
+              <span class="pill booked">Call Booked</span>
+              <span class="score hot">8/10</span>
+            </div>
+            <div class="stamp">Day 3</div>
+          </div>
+
+          <div class="lead-card" data-lead="riya" onclick="loadThread('marcus')">
+            <div class="name">Riya Shah</div>
+            <div class="company">Quantify Labs</div>
+            <div class="row2">
+              <span class="pill awaiting">Awaiting Reply</span>
+              <span class="score hot">7/10</span>
+            </div>
+            <div class="stamp">Day 6</div>
+          </div>
+
+          <div class="lead-card" data-lead="elena" onclick="loadThread('elena')">
+            <div class="name">Elena Torres</div>
+            <div class="company">BrightPath Consulting</div>
+            <div class="row2">
+              <span class="pill convo">In Conversation</span>
+              <span class="score mid">6/10</span>
+            </div>
+            <div class="stamp">Day 7</div>
+          </div>
+
+          <div class="lead-card">
+            <div class="name">Priya Nair</div>
+            <div class="company">Fernhill Analytics</div>
+            <div class="row2">
+              <span class="pill new">New</span>
+              <span class="score mid">6/10</span>
+            </div>
+            <div class="stamp">Day 8</div>
+          </div>
+
+          <div class="lead-card">
+            <div class="name">Sam Okafor</div>
+            <div class="company">Okafor &amp; Reed</div>
+            <div class="row2">
+              <span class="pill awaiting">Awaiting Reply</span>
+              <span class="score warm">5/10</span>
+            </div>
+            <div class="stamp">Day 5</div>
+          </div>
+
+          <div class="lead-card">
+            <div class="name">Yuki Tanaka</div>
+            <div class="company">Helix Systems</div>
+            <div class="row2">
+              <span class="pill nurture">Nurture</span>
+              <span class="score low">4/10</span>
+            </div>
+            <div class="stamp">Day 1</div>
+          </div>
+
+        </div>
+      </div>
+
+      <!-- CENTER THREAD -->
+      <div class="center">
+        <div class="thread-head" id="thread-head">
+          <div>
+            <div class="name" id="th-name">Marcus Webb</div>
+            <div class="company" id="th-company">Webb &amp; Co · Discovery call booked Day 9</div>
+          </div>
+          <span class="start-badge cold" id="th-startbadge">Cold start</span>
+          <span class="pill booked" id="th-status" style="flex-shrink:0;">Call Booked</span>
+          <button class="override-btn">Override →</button>
+        </div>
+
+        <div class="thread" id="thread-body">
+          <!-- Cold start thread: Marcus Webb (agent reached out first) -->
+
+          <div class="msg agent">
+            <div class="meta"><span>🤖 Agent</span><span class="day">Day 3</span></div>
+            <p>Hi Marcus — I'm reaching out from <strong>CloseIt</strong>, an AI-powered sales follow-up platform built for growing B2B teams.<br><br>We noticed Webb &amp; Co just expanded into the Austin market — congrats on the growth. New territories almost always mean the same challenge: your pipeline grows faster than your follow-up capacity, and deals slip through the cracks.<br><br>CloseIt sits on top of your existing workflow and handles the entire nurturing layer autonomously — first contact, scoping, scheduling, and handoff — so your team only steps in when a lead is actually ready to talk.<br><br>Quick question: how are you currently managing outbound follow-ups for the new region?</p>
+          </div>
+
+          <div class="msg lead">
+            <div class="meta"><span>💬 Marcus Webb</span><span class="day">Day 4</span></div>
+            <p>Thanks — yes, it's getting messy fast. We're doing it manually and things are falling through the cracks. What exactly does CloseIt do differently?</p>
+          </div>
+
+          <div class="msg you">
+            <div class="meta"><span>👤 You</span><span class="day">Day 5</span></div>
+            <p>Happy to show you — it's easier to see than explain. Would Thursday work for a quick 20-min walkthrough? I'll tailor it to the Austin expansion context.</p>
+          </div>
+
+          <div class="msg lead">
+            <div class="meta"><span>💬 Marcus Webb</span><span class="day">Day 6</span></div>
+            <p>Thursday works. 2pm CT. I also want to understand pricing before we commit to anything formal.</p>
+          </div>
+
+          <div class="msg agent">
+            <div class="meta"><span>🤖 Agent</span><span class="day">Day 7</span></div>
+            <p>Booked! Discovery call confirmed for Thursday at 2pm CT — calendar invite on its way. I'll prep a pricing overview and a brief on how CloseIt would map to your Austin workflow so you're not going in cold.</p>
+          </div>
+
+        </div>
+
+        <!-- LOCKED: task incomplete — compose is hidden, lock shown instead -->
+        <div class="locked-overlay" id="lock-overlay" style="display: flex;">
+          <div class="lock-icon">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+              <rect x="5" y="11" width="14" height="9" rx="2"/>
+              <path d="M8 11V7a4 4 0 1 1 8 0v4"/>
+            </svg>
+          </div>
+          <div class="lock-text">
+            <p>Discovery call task is pending</p>
+            <span>Complete the MoM in Open Tasks before sending further messages</span>
+          </div>
+        </div>
+
+        <!-- COMPOSE (hidden while locked) -->
+        <div class="compose" id="compose-area" style="display:none;">
+          <textarea class="compose-box" placeholder="Write a message to Marcus Webb…" id="compose-input"></textarea>
+          <div class="compose-actions">
+            <span class="compose-hint">Enter to send · or generate a draft</span>
+            <div class="compose-btns">
+              <button class="btn gen" onclick="generateDraft()">✨ Generate AI Response</button>
+              <button class="btn send">Send</button>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <!-- RIGHT PANEL -->
+      <div class="right">
+
+        <!-- Agent Actions Feed -->
+        <div class="panel-label">
+          Agent actions — Day 8
+          <span class="dot-live"></span>
+        </div>
+        <div class="agent-feed">
+
+          <div class="feed-day-header">Today · Day 8</div>
+
+          <div class="feed-item">
+            <span class="feed-dot mail"></span>
+            <div>
+              <p>Cold start email sent to <strong>Priya Nair</strong> — org intro + hook</p>
+              <span class="fstamp">08:14 AM</span>
+            </div>
+          </div>
+
+          <div class="feed-item">
+            <span class="feed-dot nudge"></span>
+            <div>
+              <p>Follow-up #2 sent to <strong>Riya Shah</strong> — no reply in 4 days</p>
+              <span class="fstamp">09:02 AM</span>
+            </div>
+          </div>
+
+          <div class="feed-item">
+            <span class="feed-dot mail"></span>
+            <div>
+              <p>Warm start reply to <strong>Elena Torres</strong> — intro + discovery questions sent</p>
+              <span class="fstamp">11:37 AM</span>
+            </div>
+          </div>
+
+          <div class="feed-empty">No more actions today. Next run at Day 9.</div>
+
+        </div>
+
+        <!-- Open Tasks -->
+        <div class="task-section">
+          <div class="task-label">📋 Open tasks <span style="color:var(--ember); font-size:10px; margin-left:auto;">1 pending</span></div>
+          <div class="task-card">
+            <div class="title">Discovery Call — Marcus Webb</div>
+            <div class="trow">
+              <span class="pill awaiting" style="margin:0; font-size:10px;">Awaiting MoM</span>
+            </div>
+            <div class="trow">
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                <rect x="3" y="5" width="18" height="16" rx="2"/>
+                <path d="M3 9h18M8 3v4M16 3v4"/>
+              </svg>
+              Day 9 · 2:00 PM CT
+            </div>
+            <button class="complete-btn" onclick="completeTask()">Complete &amp; Enter MoM →</button>
+          </div>
+        </div>
+
+        <!-- Session Stats -->
+        <div class="stats-section">
+          <div class="stats-label">This session</div>
+          <div class="stats-grid">
+            <div class="stat-cell">
+              <div class="sv">7</div>
+              <div class="sl">total leads</div>
+            </div>
+            <div class="stat-cell">
+              <div class="sv" style="color: var(--pulse);">1</div>
+              <div class="sl">call booked</div>
+            </div>
+            <div class="stat-cell">
+              <div class="sv" style="color: var(--ember);">1</div>
+              <div class="sl">critical</div>
+            </div>
+            <div class="stat-cell">
+              <div class="sv" style="color: var(--text-muted);">2</div>
+              <div class="sl">in nurture</div>
+            </div>
+          </div>
+        </div>
+
+      </div>
+
+    </div>
+  </div>
+</div>
+
+<script>
+  var ciOn = true;
+
+  var threads = {
+    marcus: {
+      name: 'Marcus Webb',
+      company: 'Webb & Co · Discovery call booked Day 9',
+      startType: 'cold',
+      startLabel: 'Cold start',
+      statusClass: 'booked',
+      statusLabel: 'Call Booked',
+      locked: true,
+      draft: "Marcus — looking forward to our call tomorrow at 2pm CT. I've put together a quick breakdown of how CloseIt would map to your Austin expansion workflow. See you then.",
+      html: `
+        <div class="msg agent">
+          <div class="meta"><span>🤖 Agent</span><span class="day">Day 3</span></div>
+          <p>Hi Marcus — I'm reaching out from <strong>CloseIt</strong>, an AI-powered sales follow-up platform built for growing B2B teams.<br><br>We noticed Webb &amp; Co just expanded into the Austin market — congrats on the growth. New territories almost always mean the same challenge: your pipeline grows faster than your follow-up capacity, and deals slip through the cracks.<br><br>CloseIt sits on top of your existing workflow and handles the entire nurturing layer autonomously — first contact, scoping, scheduling, and handoff — so your team only steps in when a lead is actually ready to talk.<br><br>Quick question: how are you currently managing outbound follow-ups for the new region?</p>
+        </div>
+        <div class="msg lead">
+          <div class="meta"><span>💬 Marcus Webb</span><span class="day">Day 4</span></div>
+          <p>Thanks — yes, it's getting messy fast. We're doing it manually and things are falling through the cracks. What exactly does CloseIt do differently?</p>
+        </div>
+        <div class="msg you">
+          <div class="meta"><span>👤 You</span><span class="day">Day 5</span></div>
+          <p>Happy to show you — it's easier to see than explain. Would Thursday work for a quick 20-min walkthrough? I'll tailor it to the Austin expansion context.</p>
+        </div>
+        <div class="msg lead">
+          <div class="meta"><span>💬 Marcus Webb</span><span class="day">Day 6</span></div>
+          <p>Thursday works. 2pm CT. I also want to understand pricing before we commit to anything formal.</p>
+        </div>
+        <div class="msg agent">
+          <div class="meta"><span>🤖 Agent</span><span class="day">Day 7</span></div>
+          <p>Booked! Discovery call confirmed for Thursday at 2pm CT — calendar invite on its way. I'll prep a pricing overview and a brief on how CloseIt would map to your Austin workflow so you're not going in cold.</p>
+        </div>`
+    },
+    elena: {
+      name: 'Elena Torres',
+      company: 'BrightPath Consulting · In conversation',
+      startType: 'warm',
+      startLabel: 'Warm start',
+      statusClass: 'convo',
+      statusLabel: 'In Conversation',
+      locked: false,
+      draft: '',
+      html: `
+        <div class="msg lead">
+          <div class="meta"><span>💬 Elena Torres</span><span class="day">Day 7</span></div>
+          <p>Hi — I came across your profile and I'm curious about what CloseIt does. We're a mid-size consulting firm and our sales team is struggling to keep up with follow-ups after initial outreach. Deals are going cold before anyone circles back. Is this something you help with?</p>
+        </div>
+        <div class="msg agent">
+          <div class="meta"><span>🤖 Agent</span><span class="day">Day 7</span></div>
+          <p>Hi Elena — yes, exactly what we do. Thanks for reaching out.<br><br>I'm the CloseIt AI agent. I'll handle the initial scoping so we can get you to the right person quickly. A few questions to understand your situation:<br><br><strong>1. Scope</strong> — Is the problem purely follow-up cadence, or does it also include the initial outreach? And are you tracking leads in a CRM today?<br><br><strong>2. Volume</strong> — Roughly how many new leads or prospects does your team work per month?<br><br><strong>3. Budget</strong> — Do you have a rough range in mind for a tool like this? Even a ballpark helps us tailor the right plan.<br><br><strong>4. Timeline</strong> — Is this urgent (something you need running in the next 2–4 weeks) or are you still in evaluation mode?<br><br>No wrong answers — just helps us skip the generic demo and show you exactly what's relevant.</p>
+        </div>`
+    }
+  };
+
+  var activeThread = 'marcus';
+
+  function loadThread(key) {
+    var t = threads[key];
+    activeThread = key;
+    document.getElementById('th-name').textContent = t.name;
+    document.getElementById('th-company').innerHTML = t.company;
+
+    var badge = document.getElementById('th-startbadge');
+    badge.textContent = t.startLabel;
+    badge.className = 'start-badge ' + t.startType;
+
+    var status = document.getElementById('th-status');
+    status.textContent = t.statusLabel;
+    status.className = 'pill ' + t.statusClass;
+    status.style.flexShrink = '0';
+
+    document.getElementById('thread-body').innerHTML = t.html;
+
+    var lock = document.getElementById('lock-overlay');
+    var compose = document.getElementById('compose-area');
+    if (t.locked) {
+      lock.style.display = 'flex';
+      compose.style.display = 'none';
+    } else {
+      lock.style.display = 'none';
+      compose.style.display = 'block';
+      document.getElementById('compose-input').value = '';
+      document.getElementById('compose-input').placeholder = 'Write a message to ' + t.name.split(' ')[0] + '…';
+    }
+
+    document.querySelectorAll('.lead-card').forEach(function(c) { c.classList.remove('active'); });
+    document.querySelector('[data-lead="' + key + '"]').classList.add('active');
+  }
+
+  function toggleCloseIt() {
+    ciOn = !ciOn;
+    var toggle = document.getElementById('ci-toggle');
+    var dot = document.getElementById('ci-dot');
+    var label = document.getElementById('ci-label');
+    var banner = document.getElementById('disabled-banner');
+    if (ciOn) {
+      toggle.style.cssText = 'background:rgba(47,158,68,0.12);border:1px solid rgba(47,158,68,0.25);color:#1A5E28;';
+      dot.style.background = '#2F9E44';
+      label.textContent = 'CloseIt: On';
+      banner.style.display = 'none';
+    } else {
+      toggle.style.cssText = 'background:rgba(34,31,26,0.06);border:1px solid rgba(34,31,26,0.12);color:#5C5751;';
+      dot.style.background = '#9A958F';
+      label.textContent = 'CloseIt: Off';
+      banner.style.display = 'flex';
+    }
+  }
+
+  function completeTask() {
+    document.getElementById('lock-overlay').style.display = 'none';
+    document.getElementById('compose-area').style.display = 'block';
+    var btn = document.querySelector('.task-card .complete-btn');
+    btn.textContent = '✓ Task completed';
+    btn.disabled = true;
+    document.querySelector('.task-card').style.opacity = '0.45';
+  }
+
+  function generateDraft() {
+    var t = threads[activeThread];
+    var box = document.getElementById('compose-input');
+    box.value = t.draft || 'Hi ' + t.name.split(' ')[0] + ' — following up on our conversation. Happy to answer any questions before we connect further.';
+    box.focus();
+  }
+</script>
+
+</body>
+</html>
