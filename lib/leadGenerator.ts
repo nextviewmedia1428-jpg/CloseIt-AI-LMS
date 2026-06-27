@@ -74,6 +74,8 @@ export function generateLeadSchedule(
         discoveryCallDay: null,
         agentFollowUpCount: 0,
         lastAgentFollowUpDay: null,
+        agentNudgeCount: 0,
+        lastAgentNudgeDay: null,
       };
 
       schedule[day].push(lead);

@@ -15,7 +15,7 @@ function applyN8nResponse(
     newLeads?: Lead[];
     threadMessages?: { leadId: string; from: 'agent' | 'lead' | 'user'; body: string; day: number }[];
     scoreUpdates?: { leadId: string; score: number; delta: number }[];
-    statusUpdates?: { leadId: string; status: Lead['status']; agentFollowUpCount?: number; lastAgentFollowUpDay?: number; discoveryCallDay?: number }[];
+    statusUpdates?: { leadId: string; status: Lead['status']; agentFollowUpCount?: number; lastAgentFollowUpDay?: number; agentNudgeCount?: number; lastAgentNudgeDay?: number; discoveryCallDay?: number }[];
     agentActions?: Action[];
     notifications?: { type: Notification['type']; message: string }[];
     tasks?: { leadId: string; leadName: string; company: string; callDay: number }[];
@@ -38,6 +38,12 @@ function applyN8nResponse(
   if (data.statusUpdates?.length) {
     const statusMap = Object.fromEntries(data.statusUpdates.map(u => [u.leadId, u]));
     leads = leads.map(l => statusMap[l.id] ? { ...l, ...statusMap[l.id], id: l.id } : l);
+  }
+
+  // Apply counter/field updates from leadUpdates (agentFollowUpCount, agentNudgeCount, etc.)
+  if ((data as { leadUpdates?: { leadId: string; [k: string]: unknown }[] }).leadUpdates?.length) {
+    const updMap = Object.fromEntries((data as { leadUpdates: { leadId: string; [k: string]: unknown }[] }).leadUpdates.map((u: { leadId: string; [k: string]: unknown }) => [u.leadId, u]));
+    leads = leads.map(l => updMap[l.id] ? { ...l, ...updMap[l.id], id: l.id } : l);
   }
 
   // Apply thread messages

@@ -29,8 +29,10 @@ export interface Lead {
   lastUserReplyDay: number | null; // last day user sent a message
   replyFrequencyDays: number;     // expected reply cadence (2–6), seeded per lead
   discoveryCallDay: number | null;
-  agentFollowUpCount: number;     // how many pre-discovery follow-ups CloseIt has sent
+  agentFollowUpCount: number;     // pre-discovery call follow-ups sent (max 4)
   lastAgentFollowUpDay: number | null;
+  agentNudgeCount: number;        // post-user-reply nudges sent (max 4, every 2 days)
+  lastAgentNudgeDay: number | null;
   threadSummary?: string;
 }
 
