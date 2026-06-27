@@ -78,6 +78,7 @@ export interface OpenTask {
   callDay: number;
   status: 'pending' | 'completed';
   mom?: string;
+  momFollowUpSent?: boolean;
 }
 
 export interface Notification {

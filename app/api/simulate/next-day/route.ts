@@ -40,7 +40,8 @@ export async function POST(req: NextRequest) {
     const seenMsgs = new Set<string>(); // leadId+from+body key
     const seenActions = new Set<string>();
     const seenTasks = new Set<string>();
-    const merged: Record<string, unknown[]> = { newLeads: [], threadMessages: [], scoreUpdates: [], statusUpdates: [], leadUpdates: [], agentActions: [], notifications: [], tasks: [] };
+    const seenTaskUpdates = new Set<string>();
+    const merged: Record<string, unknown[]> = { newLeads: [], threadMessages: [], scoreUpdates: [], statusUpdates: [], leadUpdates: [], agentActions: [], notifications: [], tasks: [], taskUpdates: [] };
 
     for (const item of items) {
       for (const l of (item.newLeads as {id:string}[] ?? [])) { if (!seenLeads.has(l.id)) { seenLeads.add(l.id); (merged.newLeads as unknown[]).push(l); } }
@@ -56,6 +57,7 @@ export async function POST(req: NextRequest) {
       for (const a of (item.agentActions as {id:string}[] ?? [])) { if (!seenActions.has(a.id)) { seenActions.add(a.id); (merged.agentActions as unknown[]).push(a); } }
       for (const n of (item.notifications as unknown[] ?? [])) (merged.notifications as unknown[]).push(n);
       for (const t of (item.tasks as {leadId:string}[] ?? [])) { if (!seenTasks.has(t.leadId)) { seenTasks.add(t.leadId); (merged.tasks as unknown[]).push(t); } }
+      for (const t of (item.taskUpdates as {leadId:string}[] ?? [])) { if (!seenTaskUpdates.has(t.leadId)) { seenTaskUpdates.add(t.leadId); (merged.taskUpdates as unknown[]).push(t); } }
     }
 
     return NextResponse.json(merged);

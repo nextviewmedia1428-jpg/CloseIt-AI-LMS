@@ -64,6 +64,12 @@ function applyN8nResponse(
   const incomingTasks: OpenTask[] = (data.tasks ?? []).map(t => ({ ...t, status: 'pending' as const }));
   const existingTaskIds = new Set(s.tasks.map(t => t.leadId));
   const newTasks = incomingTasks.filter(t => !existingTaskIds.has(t.leadId));
+  // Apply taskUpdates (e.g. momFollowUpSent: true after post-MoM email sent)
+  type TaskUpdate = { leadId: string; [k: string]: unknown };
+  const taskUpdateMap = Object.fromEntries(
+    ((data as { taskUpdates?: TaskUpdate[] }).taskUpdates ?? []).map(u => [u.leadId, u])
+  );
+  const updatedExistingTasks = s.tasks.map(t => taskUpdateMap[t.leadId] ? { ...t, ...taskUpdateMap[t.leadId] } : t);
 
   // Notifications
   const notifsWithId: Notification[] = (data.notifications ?? []).map((n, idx) => ({ ...n, id: `n8n_notif_${newDay}_${idx}`, day: newDay, read: false }));
@@ -73,7 +79,7 @@ function applyN8nResponse(
     leads,
     threadsByLead: threadUpdates,
     actionsByDay: { ...s.actionsByDay, [newDay]: data.agentActions ?? [] },
-    tasks: [...s.tasks, ...newTasks],
+    tasks: [...updatedExistingTasks, ...newTasks],
     notifications: [...s.notifications, ...notifsWithId],
     isAdvancing: false,
   });
@@ -154,7 +160,8 @@ export const useSimulatorStore = create<SimulatorStore>((set, get) => {
             closeItEnabled,
             leads,
             threads: threadsByLead,
-            scheduledLeads, // fallback hint for n8n if it wants to use them
+            tasks: get().tasks,
+            scheduledLeads,
           }),
         });
 
@@ -221,7 +228,7 @@ export const useSimulatorStore = create<SimulatorStore>((set, get) => {
     closeMomPanel: () => set({ showMomPanel: false, momLeadId: null }),
 
     completeMomTask: (leadId, mom) => set(s => ({
-      tasks: s.tasks.map(t => t.leadId === leadId ? { ...t, status: 'completed', mom } : t),
+      tasks: s.tasks.map(t => t.leadId === leadId ? { ...t, status: 'completed', mom, momFollowUpSent: false } : t),
       showMomPanel: false,
       momLeadId: null,
     })),
