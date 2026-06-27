@@ -27,7 +27,7 @@ function NavBar() {
             <div className="text-[18px] font-display font-bold leading-none">{day === 0 ? 'Day 0' : `Day ${day}`}</div>
           </div>
           <button
-            onClick={() => useSimulatorStore.getState().nextDay()}
+            onClick={() => { if (!useSimulatorStore.getState().isAdvancing) useSimulatorStore.getState().nextDay(); }}
             disabled={isAdvancing}
             className="bg-pulse text-paper text-xs font-semibold px-4 py-2 rounded-full disabled:opacity-50 hover:bg-pulse/80 transition-colors"
           >

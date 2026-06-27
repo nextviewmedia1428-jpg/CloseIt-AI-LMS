@@ -30,7 +30,35 @@ export async function POST(req: NextRequest) {
       return NextResponse.json({ ok: false, error: `n8n ${res.status}`, mock: true });
     }
 
-    return NextResponse.json(await res.json());
+    const raw = await res.json();
+    // n8n returns an array when the webhook fires multiple times (rapid clicks before button disables)
+    // Merge all items: deduplicate by ID, union all arrays
+    const items: Record<string, unknown>[] = Array.isArray(raw) ? raw : [raw];
+    if (items.length === 1) return NextResponse.json(items[0]);
+
+    const seenLeads = new Set<string>();
+    const seenMsgs = new Set<string>(); // leadId+from+body key
+    const seenActions = new Set<string>();
+    const seenTasks = new Set<string>();
+    const merged: Record<string, unknown[]> = { newLeads: [], threadMessages: [], scoreUpdates: [], statusUpdates: [], leadUpdates: [], agentActions: [], notifications: [], tasks: [] };
+
+    for (const item of items) {
+      for (const l of (item.newLeads as {id:string}[] ?? [])) { if (!seenLeads.has(l.id)) { seenLeads.add(l.id); (merged.newLeads as unknown[]).push(l); } }
+      for (const m of (item.threadMessages as {leadId:string;from:string;body:string}[] ?? [])) {
+        const k = `${m.leadId}|${m.from}|${m.body.slice(0,40)}`;
+        if (!seenMsgs.has(k)) { seenMsgs.add(k); (merged.threadMessages as unknown[]).push(m); }
+      }
+      for (const u of (item.scoreUpdates as {leadId:string}[] ?? [])) {
+        if (!(merged.scoreUpdates as {leadId:string}[]).some(x => x.leadId === u.leadId)) (merged.scoreUpdates as unknown[]).push(u);
+      }
+      for (const u of (item.statusUpdates as {leadId:string}[] ?? [])) (merged.statusUpdates as unknown[]).push(u);
+      for (const u of (item.leadUpdates as {leadId:string}[] ?? [])) (merged.leadUpdates as unknown[]).push(u);
+      for (const a of (item.agentActions as {id:string}[] ?? [])) { if (!seenActions.has(a.id)) { seenActions.add(a.id); (merged.agentActions as unknown[]).push(a); } }
+      for (const n of (item.notifications as unknown[] ?? [])) (merged.notifications as unknown[]).push(n);
+      for (const t of (item.tasks as {leadId:string}[] ?? [])) { if (!seenTasks.has(t.leadId)) { seenTasks.add(t.leadId); (merged.tasks as unknown[]).push(t); } }
+    }
+
+    return NextResponse.json(merged);
   } catch (err) {
     console.error('[next-day] fetch failed:', err);
     return NextResponse.json({ ok: false, error: String(err), mock: true });
