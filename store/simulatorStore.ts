@@ -34,9 +34,16 @@ function applyN8nResponse(
     leads = leads.map(l => scoreMap[l.id] ? { ...l, score: scoreMap[l.id].score, scoreDelta: scoreMap[l.id].delta } : l);
   }
 
-  // Apply status + field updates
+  // Apply status + field updates — priority-based merge so Discovery Booked isn't overwritten by Awaiting Reply
   if (data.statusUpdates?.length) {
-    const statusMap = Object.fromEntries(data.statusUpdates.map(u => [u.leadId, u]));
+    const STATUS_PRIORITY: Record<string, number> = { 'Discovery Booked': 5, 'Replied': 4, 'Awaiting Reply': 3, 'Contacted': 2, 'New': 1 };
+    const statusMap: Record<string, typeof data.statusUpdates[0]> = {};
+    for (const u of data.statusUpdates) {
+      const existing = statusMap[u.leadId];
+      if (!existing || (STATUS_PRIORITY[u.status ?? ''] ?? 0) > (STATUS_PRIORITY[existing.status ?? ''] ?? 0)) {
+        statusMap[u.leadId] = u;
+      }
+    }
     leads = leads.map(l => statusMap[l.id] ? { ...l, ...statusMap[l.id], id: l.id } : l);
   }
 
