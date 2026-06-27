@@ -80,6 +80,19 @@
       ]
     },
     {
+      "id": "wf2v2-05a",
+      "name": "Prep Generate Leads Body",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        780,
+        300
+      ],
+      "parameters": {
+        "jsCode": "const state = $('Parse State').first().json;\nconst existingNames = (state.existingNames ?? []).join(', ');\nconst count = Math.floor(Math.random() * 4) + 2;\n\nconst userContent = `Generate ${count} unique B2B leads. Each object must have:\\n- name: full name (realistic, diverse)\\n- company: company name\\n- industry: one of [Sales Consulting, SaaS/Analytics, E-commerce, Legal Services, Manufacturing, Health Tech, Digital Marketing, Fintech, Real Estate, HR Tech]\\n- email: professional email\\n- startType: \"cold\" (70%) or \"warm\" (30%)\\n- intentSignal: \"high\" (30%), \"medium\" (40%), or \"low\" (30%)\\n- replyFrequencyDays: integer 2-6\\n- inboundMessage: if warm, a realistic first message to CloseIt (an AI CRM automation platform). If cold, null.\\n\\nExclude these existing names: ${existingNames}\\n\\nReturn ONLY the JSON array.`;\n\nconst body = JSON.stringify({\n  model: \"gpt-4o-mini\",\n  temperature: 0.9,\n  max_tokens: 1200,\n  messages: [\n    { role: \"system\", content: \"You generate realistic B2B leads for a CRM automation demo. Return ONLY a valid JSON array, no markdown, no explanation.\" },\n    { role: \"user\", content: userContent }\n  ]\n});\n\nreturn [{ json: { body } }];"
+      }
+    },
+    {
       "parameters": {
         "method": "POST",
         "url": "https://api.openai.com/v1/chat/completions",
@@ -95,16 +108,17 @@
           ]
         },
         "sendBody": true,
-        "specifyBody": "json",
-        "jsonBody": "={\n  \"model\": \"gpt-4o-mini\",\n  \"temperature\": 0.9,\n  \"max_tokens\": 1200,\n  \"messages\": [\n    {\n      \"role\": \"system\",\n      \"content\": \"You generate realistic B2B leads for a CRM automation demo. Return ONLY a valid JSON array, no markdown, no explanation.\"\n    },\n    {\n      \"role\": \"user\",\n      \"content\": \"Generate {{ Math.floor(Math.random() * 4) + 2 }} unique B2B leads. Each object must have:\\n- name: full name (realistic, diverse)\\n- company: company name\\n- industry: one of [Sales Consulting, SaaS/Analytics, E-commerce, Legal Services, Manufacturing, Health Tech, Digital Marketing, Fintech, Real Estate, HR Tech]\\n- email: professional email\\n- startType: \\\"cold\\\" (70%) or \\\"warm\\\" (30%)\\n- intentSignal: \\\"high\\\" (30%), \\\"medium\\\" (40%), or \\\"low\\\" (30%)\\n- replyFrequencyDays: integer 2-6\\n- inboundMessage: if warm, a realistic first message to CloseIt (an AI CRM automation platform). If cold, null.\\n\\nExclude these existing names: {{ $json.existingNames.join(', ') }}\\n\\nReturn ONLY the JSON array.\"\n    }\n  ]\n}",
-        "options": {}
+        "specifyBody": "raw",
+        "options": {},
+        "rawContentType": "application/json",
+        "rawBody": "={{ $json.body }}"
       },
       "id": "wf2v2-05",
       "name": "OpenAI: Generate Leads",
       "type": "n8n-nodes-base.httpRequest",
       "typeVersion": 4.2,
       "position": [
-        780,
+        1000,
         300
       ],
       "credentials": {
@@ -128,38 +142,16 @@
       ]
     },
     {
-      "parameters": {
-        "method": "POST",
-        "url": "https://api.openai.com/v1/chat/completions",
-        "authentication": "genericCredentialType",
-        "genericAuthType": "httpHeaderAuth",
-        "sendHeaders": true,
-        "headerParameters": {
-          "parameters": [
-            {
-              "name": "Content-Type",
-              "value": "application/json"
-            }
-          ]
-        },
-        "sendBody": true,
-        "specifyBody": "json",
-        "jsonBody": "={\n  \"model\": \"gpt-4o-mini\",\n  \"temperature\": 0.85,\n  \"max_tokens\": 2000,\n  \"messages\": [\n    {\n      \"role\": \"system\",\n      \"content\": \"You simulate realistic B2B lead email replies for a CRM demo. Be natural, concise (under 80 words each). Return ONLY valid JSON, no markdown.\"\n    },\n    {\n      \"role\": \"user\",\n      \"content\": \"For each lead below, generate their next email reply based on the thread history. Their reply should reflect their intentSignal level.\\n\\nLeads needing replies:\\n{{ JSON.stringify($('Parse State').first().json.replyingLeads.map(l => ({ id: l.id, name: l.name, company: l.company, industry: l.industry, intentSignal: l.intentSignal, thread: ($('Parse State').first().json.threads[l.id] ?? []).map(m => `[${m.from.toUpperCase()}] ${m.body}`).join('\\\\n\\\\n') }))) }}\\n\\nReturn a JSON array: [{ leadId, replyText, containsBookingSignal (true if reply suggests scheduling/agreeing to a call) }]\"\n    }\n  ]\n}",
-        "options": {}
-      },
-      "id": "wf2v2-07",
-      "name": "OpenAI: Generate Lead Replies",
-      "type": "n8n-nodes-base.httpRequest",
-      "typeVersion": 4.2,
+      "id": "wf2v2-07a",
+      "name": "Prep Lead Replies Body",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
       "position": [
-        1000,
+        780,
         480
       ],
-      "credentials": {
-        "httpHeaderAuth": {
-          "id": "openai-header-auth",
-          "name": "OpenAI API Key"
-        }
+      "parameters": {
+        "jsCode": "const state = $('Parse State').first().json;\nconst replyingLeads = state.replyingLeads ?? [];\nconst threads = state.threads ?? {};\n\nconst leadsPayload = replyingLeads.map(l => ({\n  id: l.id,\n  name: l.name,\n  company: l.company,\n  industry: l.industry,\n  intentSignal: l.intentSignal,\n  thread: (threads[l.id] ?? []).map(m => `[${m.from.toUpperCase()}] ${m.body}`).join('\\n\\n')\n}));\n\nconst body = JSON.stringify({\n  model: \"gpt-4o-mini\",\n  temperature: 0.85,\n  max_tokens: 2000,\n  messages: [\n    { role: \"system\", content: \"You simulate realistic B2B lead email replies for a CRM demo. Be natural, concise (under 80 words each). Return ONLY valid JSON, no markdown.\" },\n    { role: \"user\", content: `For each lead below, generate their next email reply based on the thread history. Their reply should reflect their intentSignal level.\\n\\nLeads needing replies:\\n${JSON.stringify(leadsPayload)}\\n\\nReturn a JSON array: [{ \"leadId\": \"...\", \"replyText\": \"...\", \"containsBookingSignal\": true/false }]` }\n  ]\n});\n\nreturn [{ json: { body } }];"
       }
     },
     {
@@ -178,9 +170,59 @@
           ]
         },
         "sendBody": true,
-        "specifyBody": "json",
-        "jsonBody": "{\n  \"model\": \"gpt-4o-mini\",\n  \"temperature\": 0.8,\n  \"max_tokens\": 2500,\n  \"messages\": [\n    {\n      \"role\": \"system\",\n      \"content\": \"You are CloseIt, an AI CRM automation assistant. You write two types of follow-up emails:\\n1. PRE-DISCOVERY: nudges to book a 20-minute discovery call with leads who have not replied yet.\\n2. POST-USER-REPLY: gentle nudges to leads who have not responded to the user's most recent message \u2014 reference what was said, ask them to reply.\\nNever sound automated. Under 80 words each. Return ONLY valid JSON, no markdown.\"\n    },\n    {\n      \"role\": \"user\",\n      \"content\": \"Write follow-up emails for the leads below.\\n\\nPRE-DISCOVERY (lead has not replied to initial outreach \u2014 nudge to book a call):\\n={{ JSON.stringify($('Parse State').first().json.preDiscoveryFollowUps.map(l => ({ id: l.id, type: 'pre_discovery', name: l.name, company: l.company, industry: l.industry, followUpNum: (l.agentFollowUpCount ?? 0) + 1, thread: ($('Parse State').first().json.threads[l.id] ?? []).map(m => '[' + m.from.toUpperCase() + '] ' + m.body).join('\\\\n\\\\n') }))) }}\\n\\nPOST-USER-REPLY (user sent a message, lead has not responded \u2014 nudge lead to reply):\\n={{ JSON.stringify($('Parse State').first().json.postUserReplyNudges.map(l => ({ id: l.id, type: 'post_user_reply', name: l.name, company: l.company, industry: l.industry, nudgeNum: (l.agentNudgeCount ?? 0) + 1, thread: ($('Parse State').first().json.threads[l.id] ?? []).map(m => '[' + m.from.toUpperCase() + '] ' + m.body).join('\\\\n\\\\n') }))) }}\\n\\nReturn JSON array: [{ leadId, type, emailBody }]\"\n    }\n  ]\n}",
-        "options": {}
+        "specifyBody": "raw",
+        "options": {},
+        "rawContentType": "application/json",
+        "rawBody": "={{ $json.body }}"
+      },
+      "id": "wf2v2-07",
+      "name": "OpenAI: Generate Lead Replies",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        1000,
+        480
+      ],
+      "credentials": {
+        "httpHeaderAuth": {
+          "id": "openai-header-auth",
+          "name": "OpenAI API Key"
+        }
+      }
+    },
+    {
+      "id": "wf2v2-08a",
+      "name": "Prep Follow-ups Body",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        780,
+        660
+      ],
+      "parameters": {
+        "jsCode": "const state = $('Parse State').first().json;\nconst preDiscovery = state.preDiscoveryFollowUps ?? [];\nconst postUserReply = state.postUserReplyNudges ?? [];\nconst threads = state.threads ?? {};\n\nconst prePayload = preDiscovery.map(l => ({\n  id: l.id,\n  type: 'pre_discovery',\n  name: l.name,\n  company: l.company,\n  industry: l.industry,\n  followUpNum: (l.agentFollowUpCount ?? 0) + 1,\n  thread: (threads[l.id] ?? []).map(m => `[${m.from.toUpperCase()}] ${m.body}`).join('\\n\\n')\n}));\n\nconst postPayload = postUserReply.map(l => ({\n  id: l.id,\n  type: 'post_user_reply',\n  name: l.name,\n  company: l.company,\n  industry: l.industry,\n  nudgeNum: (l.agentNudgeCount ?? 0) + 1,\n  thread: (threads[l.id] ?? []).map(m => `[${m.from.toUpperCase()}] ${m.body}`).join('\\n\\n')\n}));\n\nconst body = JSON.stringify({\n  model: \"gpt-4o-mini\",\n  temperature: 0.8,\n  max_tokens: 2500,\n  messages: [\n    {\n      role: \"system\",\n      content: \"You are CloseIt, an AI CRM automation assistant. You write two types of follow-up emails:\\n1. PRE-DISCOVERY: nudges to book a 20-minute discovery call with leads who have not replied yet.\\n2. POST-USER-REPLY: gentle nudges to leads who have not responded to the user's most recent message \u2014 reference what was said, ask them to reply.\\nNever sound automated. Under 80 words each. Return ONLY valid JSON, no markdown.\"\n    },\n    {\n      role: \"user\",\n      content: `Write follow-up emails for the leads below.\\n\\nPRE-DISCOVERY (lead has not replied \u2014 nudge to book a call):\\n${JSON.stringify(prePayload)}\\n\\nPOST-USER-REPLY (user sent a message, lead has not responded \u2014 nudge lead to reply):\\n${JSON.stringify(postPayload)}\\n\\nReturn JSON array: [{ \"leadId\": \"...\", \"type\": \"pre_discovery\" or \"post_user_reply\", \"emailBody\": \"...\" }]`\n    }\n  ]\n});\n\nreturn [{ json: { body } }];"
+      }
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "https://api.openai.com/v1/chat/completions",
+        "authentication": "genericCredentialType",
+        "genericAuthType": "httpHeaderAuth",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "Content-Type",
+              "value": "application/json"
+            }
+          ]
+        },
+        "sendBody": true,
+        "specifyBody": "raw",
+        "options": {},
+        "rawContentType": "application/json",
+        "rawBody": "={{ $json.body }}"
       },
       "id": "wf2v2-08",
       "name": "OpenAI: Generate Follow-ups & Nudges",
@@ -199,7 +241,7 @@
     },
     {
       "parameters": {
-        "jsCode": "const state = $('Parse State').first().json;\nconst { day, leads, threads, replyingLeads, preDiscoveryFollowUps, postUserReplyNudges, momNudgeLeads } = state;\n\n// Safe accessor \u2014 returns null if node was skipped (no input data on that branch)\nfunction safeContent(nodeName) {\n  try {\n    const items = $(nodeName).all();\n    return items.length > 0 ? (items[0].json?.choices?.[0]?.message?.content ?? '[]') : '[]';\n  } catch (_) { return '[]'; }\n}\n\nfunction safeParse(raw) {\n  try { return JSON.parse(raw.replace(/```json|```/g, '').trim()); } catch { return []; }\n}\n\nconst replies = safeParse(safeContent('OpenAI: Generate Lead Replies'));\nconst followUpEmails = safeParse(safeContent('OpenAI: Generate Follow-ups & Nudges'));\n\nlet newLeads = [];\ntry {\n  const items = $('Process New Leads').all();\n  newLeads = items.length > 0 ? (items[0].json?.newLeads ?? []) : [];\n} catch (_) { newLeads = []; }\n\nconst threadMessages = [], statusUpdates = [], agentActions = [], notifications = [], tasks = [], leadUpdates = [];\n\n// 1. New lead arrivals\nfor (const l of newLeads) {\n  notifications.push({ type: 'lead_arrived', message: `New lead: ${l.name} from ${l.company} (${l.startType === 'warm' ? 'warm inbound' : 'cold outreach'})` });\n  if (l.startType === 'warm' && l.inboundMessage) {\n    threadMessages.push({ leadId: l.id, from: 'lead', body: l.inboundMessage, day });\n    statusUpdates.push({ leadId: l.id, status: 'Replied' });\n  }\n}\n\n// 2. AI-simulated lead replies\nfor (const r of replies) {\n  const lead = (replyingLeads ?? []).find(l => l.id === r.leadId);\n  if (!lead || !r.replyText) continue;\n  threadMessages.push({ leadId: r.leadId, from: 'lead', body: r.replyText, day });\n  if (r.containsBookingSignal && lead.status !== 'Discovery Booked') {\n    const callDay = day + 1;\n    statusUpdates.push({ leadId: r.leadId, status: 'Discovery Booked', discoveryCallDay: callDay });\n    agentActions.push({ id: `act_${day}_disc_${r.leadId}`, day, type: 'discovery_call_booked', leadId: r.leadId, leadName: lead.name, summary: `Discovery call booked with ${lead.name} (${lead.company}) \u2014 Day ${callDay}`, actor: 'ai', detail: { callDay }, timestamp: new Date().toISOString() });\n    tasks.push({ leadId: r.leadId, leadName: lead.name, company: lead.company, callDay });\n    notifications.push({ type: 'call_booked', message: `Discovery call booked with ${lead.name} (${lead.company})` });\n  } else {\n    statusUpdates.push({ leadId: r.leadId, status: 'Replied' });\n  }\n  agentActions.push({ id: `act_${day}_reply_${r.leadId}`, day, type: 'lead_replied', leadId: r.leadId, leadName: lead.name, summary: `${lead.name} replied`, actor: 'lead', detail: { body: r.replyText }, timestamp: new Date().toISOString() });\n}\n\n// 3a. Pre-discovery follow-ups\nfor (const fu of followUpEmails.filter(f => f.type === 'pre_discovery')) {\n  const lead = (preDiscoveryFollowUps ?? []).find(l => l.id === fu.leadId);\n  if (!lead || !fu.emailBody) continue;\n  threadMessages.push({ leadId: fu.leadId, from: 'agent', body: fu.emailBody, day });\n  agentActions.push({ id: `act_${day}_fu_${fu.leadId}`, day, type: 'initial_email_sent', leadId: fu.leadId, leadName: lead.name, summary: `Pre-discovery follow-up #${(lead.agentFollowUpCount ?? 0)+1} sent to ${lead.name}`, actor: 'ai', detail: { body: fu.emailBody, followUpNum: (lead.agentFollowUpCount ?? 0)+1, type: 'pre_discovery' }, timestamp: new Date().toISOString() });\n  leadUpdates.push({ leadId: fu.leadId, agentFollowUpCount: (lead.agentFollowUpCount ?? 0) + 1, lastAgentFollowUpDay: day });\n  statusUpdates.push({ leadId: fu.leadId, status: 'Awaiting Reply' });\n}\n\n// 3b. Post-user-reply nudges\nfor (const fu of followUpEmails.filter(f => f.type === 'post_user_reply')) {\n  const lead = (postUserReplyNudges ?? []).find(l => l.id === fu.leadId);\n  if (!lead || !fu.emailBody) continue;\n  threadMessages.push({ leadId: fu.leadId, from: 'agent', body: fu.emailBody, day });\n  agentActions.push({ id: `act_${day}_nudge_${fu.leadId}`, day, type: 'initial_email_sent', leadId: fu.leadId, leadName: lead.name, summary: `Nudge #${(lead.agentNudgeCount ?? 0)+1}: reminded ${lead.name} to reply to your message`, actor: 'ai', detail: { body: fu.emailBody, nudgeNum: (lead.agentNudgeCount ?? 0)+1, type: 'post_user_reply' }, timestamp: new Date().toISOString() });\n  leadUpdates.push({ leadId: fu.leadId, agentNudgeCount: (lead.agentNudgeCount ?? 0) + 1, lastAgentNudgeDay: day });\n}\n\n// 4. Post-MoM nudge to user\nfor (const lead of (momNudgeLeads ?? [])) {\n  notifications.push({ type: 'lead_arrived', message: `Action needed: ${lead.name} replied after your discovery call \u2014 your response is due` });\n}\n\n// 5. Score all leads\nconst POS = ['interested','sounds good',\"let's\",'schedule','book','call','demo','yes','definitely','great','perfect','keen','forward','available','when can','happy to'];\nconst NEG = ['not interested','no thanks','unsubscribe','remove','stop','busy','later','maybe next','not right now'];\nconst scoreUpdates = [...(leads ?? []), ...newLeads]\n  .filter(l => !['Closed Won','Closed Lost','Nurture'].includes(l.status))\n  .map(lead => {\n    const thread = (threads ?? {})[lead.id] ?? [];\n    const leadMsgs = thread.filter(m => m.from === 'lead');\n    const lastLeadMsg = leadMsgs[leadMsgs.length - 1];\n    const allText = leadMsgs.map(m => m.body.toLowerCase()).join(' ');\n    const posHits = POS.filter(k => allText.includes(k)).length;\n    const negHits = NEG.filter(k => allText.includes(k)).length;\n    const intentScore = Math.min(4, Math.max(0, posHits - negHits * 2));\n    const daysSince = lastLeadMsg ? (day - lastLeadMsg.day) : day;\n    const recencyPenalty = Math.max(-3, -Math.floor(daysSince / lead.replyFrequencyDays));\n    const replyCount = leadMsgs.length;\n    const expectedReplies = Math.max(1, Math.floor(day / lead.replyFrequencyDays));\n    const freqBonus = replyCount >= expectedReplies ? Math.min(2, replyCount - expectedReplies + 1) : 0;\n    const callBonus = lead.status === 'Discovery Booked' ? 2 : 0;\n    const newScore = Math.min(10, Math.max(0, 6 + intentScore + recencyPenalty + freqBonus + callBonus));\n    const delta = newScore - (lead.score ?? 6);\n    if (newScore < 4 && (lead.score ?? 6) >= 4) notifications.push({ type: 'score_critical', message: `${lead.name}'s score dropped to ${newScore} \u2014 needs attention` });\n    return { leadId: lead.id, score: newScore, delta };\n  });\n\nreturn [{ json: { newLeads, threadMessages, scoreUpdates, statusUpdates, leadUpdates, agentActions, notifications, tasks } }];"
+        "jsCode": "const state = $('Parse State').first().json;\nconst { day, leads, threads, replyingLeads, preDiscoveryFollowUps, postUserReplyNudges, momNudgeLeads } = state;\n\nfunction safeContent(nodeName) {\n  try {\n    const items = $(nodeName).all();\n    return items.length > 0 ? (items[0].json?.choices?.[0]?.message?.content ?? '[]') : '[]';\n  } catch (_) { return '[]'; }\n}\n\nfunction safeParse(raw) {\n  try {\n    const cleaned = raw.replace(/```json|```/g, '').trim();\n    const result = JSON.parse(cleaned);\n    return Array.isArray(result) ? result : [];\n  } catch (_) { return []; }\n}\n\nconst replies = safeParse(safeContent('OpenAI: Generate Lead Replies'));\nconst followUpEmails = safeParse(safeContent('OpenAI: Generate Follow-ups & Nudges'));\n\nlet newLeads = [];\ntry {\n  const items = $('Process New Leads').all();\n  newLeads = items.length > 0 ? (items[0].json?.newLeads ?? []) : [];\n} catch (_) { newLeads = []; }\n\nconst threadMessages = [], statusUpdates = [], agentActions = [], notifications = [], tasks = [], leadUpdates = [];\n\n// 1. New lead arrivals\nfor (const l of newLeads) {\n  notifications.push({ type: 'lead_arrived', message: `New lead: ${l.name} from ${l.company} (${l.startType === 'warm' ? 'warm inbound' : 'cold outreach'})` });\n  if (l.startType === 'warm' && l.inboundMessage) {\n    threadMessages.push({ leadId: l.id, from: 'lead', body: l.inboundMessage, day });\n    statusUpdates.push({ leadId: l.id, status: 'Replied' });\n  }\n}\n\n// 2. AI-simulated lead replies\nfor (const r of replies) {\n  const lead = (replyingLeads ?? []).find(l => l.id === r.leadId);\n  if (!lead || !r.replyText) continue;\n  threadMessages.push({ leadId: r.leadId, from: 'lead', body: r.replyText, day });\n  if (r.containsBookingSignal && lead.status !== 'Discovery Booked') {\n    const callDay = day + 1;\n    statusUpdates.push({ leadId: r.leadId, status: 'Discovery Booked', discoveryCallDay: callDay });\n    agentActions.push({ id: `act_${day}_disc_${r.leadId}`, day, type: 'discovery_call_booked', leadId: r.leadId, leadName: lead.name, summary: `Discovery call booked with ${lead.name} (${lead.company}) \u2014 Day ${callDay}`, actor: 'ai', detail: { callDay }, timestamp: new Date().toISOString() });\n    tasks.push({ leadId: r.leadId, leadName: lead.name, company: lead.company, callDay });\n    notifications.push({ type: 'call_booked', message: `Discovery call booked with ${lead.name} (${lead.company})` });\n  } else {\n    statusUpdates.push({ leadId: r.leadId, status: 'Replied' });\n  }\n  agentActions.push({ id: `act_${day}_reply_${r.leadId}`, day, type: 'lead_replied', leadId: r.leadId, leadName: lead.name, summary: `${lead.name} replied`, actor: 'lead', detail: { body: r.replyText }, timestamp: new Date().toISOString() });\n}\n\n// 3a. Pre-discovery follow-ups\nfor (const fu of followUpEmails.filter(f => f.type === 'pre_discovery')) {\n  const lead = (preDiscoveryFollowUps ?? []).find(l => l.id === fu.leadId);\n  if (!lead || !fu.emailBody) continue;\n  threadMessages.push({ leadId: fu.leadId, from: 'agent', body: fu.emailBody, day });\n  agentActions.push({ id: `act_${day}_fu_${fu.leadId}`, day, type: 'initial_email_sent', leadId: fu.leadId, leadName: lead.name, summary: `Pre-discovery follow-up #${(lead.agentFollowUpCount ?? 0)+1} sent to ${lead.name}`, actor: 'ai', detail: { body: fu.emailBody, followUpNum: (lead.agentFollowUpCount ?? 0)+1, type: 'pre_discovery' }, timestamp: new Date().toISOString() });\n  leadUpdates.push({ leadId: fu.leadId, agentFollowUpCount: (lead.agentFollowUpCount ?? 0) + 1, lastAgentFollowUpDay: day });\n  statusUpdates.push({ leadId: fu.leadId, status: 'Awaiting Reply' });\n}\n\n// 3b. Post-user-reply nudges\nfor (const fu of followUpEmails.filter(f => f.type === 'post_user_reply')) {\n  const lead = (postUserReplyNudges ?? []).find(l => l.id === fu.leadId);\n  if (!lead || !fu.emailBody) continue;\n  threadMessages.push({ leadId: fu.leadId, from: 'agent', body: fu.emailBody, day });\n  agentActions.push({ id: `act_${day}_nudge_${fu.leadId}`, day, type: 'initial_email_sent', leadId: fu.leadId, leadName: lead.name, summary: `Nudge #${(lead.agentNudgeCount ?? 0)+1}: reminded ${lead.name} to reply to your message`, actor: 'ai', detail: { body: fu.emailBody, nudgeNum: (lead.agentNudgeCount ?? 0)+1, type: 'post_user_reply' }, timestamp: new Date().toISOString() });\n  leadUpdates.push({ leadId: fu.leadId, agentNudgeCount: (lead.agentNudgeCount ?? 0) + 1, lastAgentNudgeDay: day });\n}\n\n// 4. Post-MoM nudge to user\nfor (const lead of (momNudgeLeads ?? [])) {\n  notifications.push({ type: 'lead_arrived', message: `Action needed: ${lead.name} replied after your discovery call \u2014 your response is due` });\n}\n\n// 5. Score all leads\nconst POS = ['interested','sounds good',\"let's\",'schedule','book','call','demo','yes','definitely','great','perfect','keen','forward','available','when can','happy to'];\nconst NEG = ['not interested','no thanks','unsubscribe','remove','stop','busy','later','maybe next','not right now'];\nconst scoreUpdates = [...(leads ?? []), ...newLeads]\n  .filter(l => !['Closed Won','Closed Lost','Nurture'].includes(l.status))\n  .map(lead => {\n    const thread = (threads ?? {})[lead.id] ?? [];\n    const leadMsgs = thread.filter(m => m.from === 'lead');\n    const lastLeadMsg = leadMsgs[leadMsgs.length - 1];\n    const allText = leadMsgs.map(m => m.body.toLowerCase()).join(' ');\n    const posHits = POS.filter(k => allText.includes(k)).length;\n    const negHits = NEG.filter(k => allText.includes(k)).length;\n    const intentScore = Math.min(4, Math.max(0, posHits - negHits * 2));\n    const daysSince = lastLeadMsg ? (day - lastLeadMsg.day) : day;\n    const recencyPenalty = Math.max(-3, -Math.floor(daysSince / lead.replyFrequencyDays));\n    const replyCount = leadMsgs.length;\n    const expectedReplies = Math.max(1, Math.floor(day / lead.replyFrequencyDays));\n    const freqBonus = replyCount >= expectedReplies ? Math.min(2, replyCount - expectedReplies + 1) : 0;\n    const callBonus = lead.status === 'Discovery Booked' ? 2 : 0;\n    const newScore = Math.min(10, Math.max(0, 6 + intentScore + recencyPenalty + freqBonus + callBonus));\n    const delta = newScore - (lead.score ?? 6);\n    if (newScore < 4 && (lead.score ?? 6) >= 4) notifications.push({ type: 'score_critical', message: `${lead.name}'s score dropped to ${newScore} \u2014 needs attention` });\n    return { leadId: lead.id, score: newScore, delta };\n  });\n\nreturn [{ json: { newLeads, threadMessages, scoreUpdates, statusUpdates, leadUpdates, agentActions, notifications, tasks } }];"
       },
       "id": "wf2v2-09",
       "name": "Assemble Response",
@@ -451,17 +493,17 @@
       "main": [
         [
           {
-            "node": "OpenAI: Generate Leads",
+            "node": "Prep Generate Leads Body",
             "type": "main",
             "index": 0
           },
           {
-            "node": "OpenAI: Generate Lead Replies",
+            "node": "Prep Lead Replies Body",
             "type": "main",
             "index": 0
           },
           {
-            "node": "OpenAI: Generate Follow-ups & Nudges",
+            "node": "Prep Follow-ups Body",
             "type": "main",
             "index": 0
           }
@@ -577,6 +619,39 @@
         [
           {
             "node": "OpenAI: Initial Emails",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Prep Generate Leads Body": {
+      "main": [
+        [
+          {
+            "node": "OpenAI: Generate Leads",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Prep Lead Replies Body": {
+      "main": [
+        [
+          {
+            "node": "OpenAI: Generate Lead Replies",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Prep Follow-ups Body": {
+      "main": [
+        [
+          {
+            "node": "OpenAI: Generate Follow-ups & Nudges",
             "type": "main",
             "index": 0
           }
