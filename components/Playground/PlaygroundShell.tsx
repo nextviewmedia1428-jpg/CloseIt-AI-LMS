@@ -316,10 +316,13 @@ function ThreadPanel() {
 // ─── Right panel — Agent Actions + Tasks + Stats ───────────────────────────
 
 function AgentActionsPanel() {
-  const { todayActions, day, tasks, leads, openMomPanel } = useSimulatorStore();
+  const { todayActions, day, tasks, leads, openMomPanel, notifications } = useSimulatorStore();
   const actions = todayActions();
   const todayOnlyActions = actions.filter(a => a.type === 'initial_email_sent' || a.type === 'discovery_call_booked');
   const pendingTask = tasks.find(t => t.status === 'pending');
+
+  // User nudges: notifications where lead is waiting for user to respond
+  const userNudges = notifications.filter(n => n.type === 'lead_replied' && n.day === day);
 
   const closedWon = leads.filter(l => l.status === 'Closed Won').length;
   const closedLost = leads.filter(l => l.status === 'Closed Lost').length;
@@ -337,7 +340,7 @@ function AgentActionsPanel() {
         <span className="text-[11px] font-bold text-ink/40 uppercase tracking-wider">Agent actions — Day {day}</span>
         <span className="ml-auto w-1.5 h-1.5 rounded-full bg-signal" />
       </div>
-      <div className="flex-1 overflow-y-auto min-h-0">
+      <div className="h-40 overflow-y-auto min-h-0">
         {todayOnlyActions.length === 0
           ? <div className="text-[11px] text-ink/30 italic px-4 py-3">No agent actions today.</div>
           : todayOnlyActions.map(a => (
@@ -345,6 +348,25 @@ function AgentActionsPanel() {
               <span className={`w-1.5 h-1.5 rounded-full mt-1.5 shrink-0 ${dotColor(a.type)}`} />
               <div>
                 <p className="text-[12px] text-ink leading-snug">{a.summary}</p>
+              </div>
+            </div>
+          ))
+        }
+      </div>
+
+      {/* User nudges — leads waiting for user reply */}
+      <div className="shrink-0 flex items-center gap-2 px-4 py-3 border-t border-b border-ink/6 bg-ember/4">
+        <span className="text-[11px] font-bold text-ember uppercase tracking-wider">User nudges</span>
+        {userNudges.length > 0 && <span className="ml-auto text-[10px] font-mono text-ember font-bold">{userNudges.length}</span>}
+      </div>
+      <div className="h-40 overflow-y-auto min-h-0">
+        {userNudges.length === 0
+          ? <div className="text-[11px] text-ink/30 italic px-4 py-3">No nudges. All caught up!</div>
+          : userNudges.map(n => (
+            <div key={n.id} className="flex items-start gap-2.5 px-4 py-2.5 hover:bg-ember/8 transition-colors">
+              <span className="w-1.5 h-1.5 rounded-full mt-1.5 shrink-0 bg-ember" />
+              <div>
+                <p className="text-[12px] text-ink leading-snug">{n.message}</p>
               </div>
             </div>
           ))
