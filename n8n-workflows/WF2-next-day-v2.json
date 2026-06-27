@@ -226,10 +226,9 @@
           ]
         },
         "sendBody": true,
-        "specifyBody": "raw",
+        "specifyBody": "json",
         "options": {},
-        "rawContentType": "application/json",
-        "rawBody": "={{ JSON.stringify({  model: 'gpt-4o-mini',  temperature: 0.85,  max_tokens: 2500,  messages: [    { role: 'system', content: 'You are CloseIt, an AI CRM automation platform. Write the first outreach email to new B2B leads. Sound like a knowledgeable helpful human \u2014 not a bot. Emails under 80 words. Return ONLY valid JSON, no markdown.' },    { role: 'user', content: 'Write initial contact emails for these new leads. For cold leads: introduce CloseIt, mention their industry, ask one hook question. For warm leads: acknowledge their inbound message and ask 4 discovery questions (budget, timeline, current tooling, main pain point).\\n\\nLeads:\\n' + JSON.stringify($('Assemble Response').first().json.newLeads.map(l => ({ id: l.id, name: l.name, company: l.company, industry: l.industry, startType: l.startType, inboundMessage: l.inboundMessage }))) + '\\n\\nReturn JSON array: [{ leadId, emailBody }]' }  ]}) }}"
+        "jsonBody": "={\n  \"model\": \"gpt-4o-mini\",\n  \"temperature\": 0.85,\n  \"max_tokens\": 2500,\n  \"messages\": [\n    {\n      \"role\": \"system\",\n      \"content\": \"You are CloseIt, an AI CRM automation platform. Write the first outreach email to new B2B leads. Sound like a knowledgeable helpful human \u2014 not a bot. Emails under 80 words. Return ONLY valid JSON array, no markdown, no explanation.\"\n    },\n    {\n      \"role\": \"user\",\n      \"content\": \"Write initial contact emails for these new leads. For cold leads: introduce CloseIt (an AI platform that automates CRM follow-ups), mention their specific industry, ask one hook question. For warm leads: acknowledge their inbound message and ask 4 discovery questions (budget, timeline, current tooling, main pain point).\\n\\nLeads:\\n{{ JSON.stringify($(\"Assemble Response\").first().json.newLeads.map(l => ({ id: l.id, name: l.name, company: l.company, industry: l.industry, startType: l.startType, inboundMessage: l.inboundMessage }))) }}\\n\\nReturn JSON array: [{ leadId, emailBody }]\"\n    }\n  ]\n}"
       },
       "id": "wf2v2-10",
       "name": "OpenAI: Initial Emails",
