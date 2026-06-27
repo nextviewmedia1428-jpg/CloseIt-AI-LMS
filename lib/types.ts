@@ -83,7 +83,7 @@ export interface OpenTask {
 export interface Notification {
   id: string;
   day: number;
-  type: 'lead_arrived' | 'score_critical' | 'call_booked' | 'closed_won' | 'closed_lost';
+  type: 'lead_arrived' | 'score_critical' | 'call_booked' | 'closed_won' | 'closed_lost' | 'lead_replied';
   message: string;
   read: boolean;
 }

@@ -57,12 +57,20 @@ function NavBar() {
               {notifications.length === 0
                 ? <div className="px-4 py-4 text-xs text-ink/30">No notifications yet.</div>
                 : <div className="max-h-64 overflow-y-auto">
-                    {[...notifications].reverse().map(n => (
-                      <div key={n.id} className="px-4 py-3 border-b border-ink/5 last:border-0">
-                        <p className="text-xs text-ink leading-snug">{n.message}</p>
-                        <span className="text-[10px] font-mono text-ink/30 mt-1 block">Day {n.day}</span>
-                      </div>
-                    ))}
+                    {[...notifications].reverse().map(n => {
+                      const dot = n.type === 'lead_replied' ? 'bg-ember' : n.type === 'call_booked' ? 'bg-signal' : n.type === 'score_critical' ? 'bg-amber' : 'bg-pulse';
+                      return (
+                        <div key={n.id} className={`px-4 py-3 border-b border-ink/5 last:border-0 ${n.type === 'lead_replied' ? 'bg-ember/4' : ''}`}>
+                          <div className="flex items-start gap-2">
+                            <span className={`mt-1.5 w-1.5 h-1.5 rounded-full shrink-0 ${dot}`} />
+                            <div>
+                              <p className="text-xs text-ink leading-snug">{n.message}</p>
+                              <span className="text-[10px] font-mono text-ink/30 mt-1 block">Day {n.day}</span>
+                            </div>
+                          </div>
+                        </div>
+                      );
+                    })}
                   </div>
               }
             </div>
