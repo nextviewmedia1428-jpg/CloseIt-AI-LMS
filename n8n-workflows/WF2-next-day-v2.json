@@ -457,20 +457,6 @@
           "name": "Google Sheets"
         }
       }
-    },
-    {
-      "parameters": {
-        "mode": "append",
-        "options": {}
-      },
-      "id": "wf2v2-merge",
-      "name": "Sync Branches",
-      "type": "n8n-nodes-base.merge",
-      "typeVersion": 3,
-      "position": [
-        1500,
-        300
-      ]
     }
   ],
   "connections": {
@@ -510,16 +496,6 @@
             "node": "Prep Generate Leads Body",
             "type": "main",
             "index": 0
-          },
-          {
-            "node": "Prep Lead Replies Body",
-            "type": "main",
-            "index": 0
-          },
-          {
-            "node": "Prep Follow-ups Body",
-            "type": "main",
-            "index": 0
           }
         ]
       ]
@@ -539,7 +515,7 @@
       "main": [
         [
           {
-            "node": "Sync Branches",
+            "node": "Prep Lead Replies Body",
             "type": "main",
             "index": 0
           }
@@ -550,9 +526,9 @@
       "main": [
         [
           {
-            "node": "Sync Branches",
+            "node": "Prep Follow-ups Body",
             "type": "main",
-            "index": 1
+            "index": 0
           }
         ]
       ]
@@ -561,9 +537,9 @@
       "main": [
         [
           {
-            "node": "Sync Branches",
+            "node": "Assemble Response",
             "type": "main",
-            "index": 2
+            "index": 0
           }
         ]
       ]
@@ -666,17 +642,6 @@
         [
           {
             "node": "OpenAI: Generate Follow-ups & Nudges",
-            "type": "main",
-            "index": 0
-          }
-        ]
-      ]
-    },
-    "Sync Branches": {
-      "main": [
-        [
-          {
-            "node": "Assemble Response",
             "type": "main",
             "index": 0
           }
