@@ -48,8 +48,8 @@ function applyN8nResponse(
 
   // Apply thread messages
   const threadUpdates = { ...s.threadsByLead };
-  for (const msg of data.threadMessages ?? []) {
-    const tm: ThreadMessage = { id: `n8n_${msg.leadId}_${newDay}_${msg.from}`, day: msg.day, from: msg.from, body: msg.body, timestamp: new Date().toISOString() };
+  for (const [idx, msg] of (data.threadMessages ?? []).entries()) {
+    const tm: ThreadMessage = { id: `n8n_${msg.leadId}_${newDay}_${msg.from}_${idx}`, day: msg.day, from: msg.from, body: msg.body, timestamp: new Date().toISOString() };
     threadUpdates[msg.leadId] = [...(threadUpdates[msg.leadId] ?? []), tm];
   }
 
