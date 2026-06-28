@@ -66,6 +66,7 @@ export function computeScore(
 export { computeGrade };
 
 interface SimulatorStore {
+  playerName: string | null;
   day: number;
   leads: Lead[];
   threads: Threads;
@@ -82,6 +83,7 @@ interface SimulatorStore {
   simulationEnded: boolean;
   endScore: EndScore | null;
 
+  setPlayerName: (name: string) => void;
   setDay: (d: number) => void;
   addLeads: (newLeads: Lead[], newThreads: Threads) => void;
   setSelectedLead: (id: string | null) => void;
@@ -108,6 +110,7 @@ const DEFAULT_CONFIG: SimulatorConfig = {
 };
 
 const INITIAL_STATE = {
+  playerName: null as string | null,
   day: 0,
   leads: [] as Lead[],
   threads: {} as Threads,
@@ -128,6 +131,7 @@ const INITIAL_STATE = {
 export const useSimulatorStore = create<SimulatorStore>((set) => ({
   ...INITIAL_STATE,
 
+  setPlayerName: (name) => set({ playerName: name }),
   setDay: (d) => set({ day: d }),
 
   addLeads: (newLeads, newThreads) =>
@@ -168,5 +172,6 @@ export const useSimulatorStore = create<SimulatorStore>((set) => ({
   setMorningBrief: (data) => set({ morningBrief: data }),
   startTimer: () => set({ timerStartedAt: Date.now() }),
   endSimulation: (score) => set({ simulationEnded: true, endScore: score, morningBrief: null, meetingModalDay: null }),
-  resetSimulation: () => set({ ...INITIAL_STATE }),
+  // ponytail: preserve playerName on reset — Play Again skips the gate
+  resetSimulation: () => set((s) => ({ ...INITIAL_STATE, playerName: s.playerName })),
 }));

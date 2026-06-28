@@ -37,12 +37,14 @@ export default function ThreadPanel() {
   const { leads, selectedLeadId, threads, day, addThreadMessage } = useSimulatorStore();
   const lead = leads.find((l) => l.lead_id === selectedLeadId);
   const [draft, setDraft] = useState('');
-  const bottomRef = useRef<HTMLDivElement>(null);
+  const scrollContainerRef = useRef<HTMLDivElement>(null);
 
   const messages: ThreadMessage[] = threads[lead?.lead_id ?? ''] ?? [];
 
+  // ponytail: scroll the container directly — scrollIntoView bubbles to outer page scroll
   useEffect(() => {
-    bottomRef.current?.scrollIntoView({ behavior: 'smooth' });
+    const el = scrollContainerRef.current;
+    if (el) el.scrollTop = el.scrollHeight;
   }, [messages.length]);
 
   function handleSend() {
@@ -98,7 +100,7 @@ export default function ThreadPanel() {
       </div>
 
       {/* Thread */}
-      <div className="flex-1 overflow-y-auto px-5 py-4 flex flex-col gap-3 bg-[var(--bg)]">
+      <div ref={scrollContainerRef} className="flex-1 overflow-y-auto px-5 py-4 flex flex-col gap-3 bg-[var(--bg)]">
         {messages.length === 0 ? (
           <p className="text-[12px] text-[var(--text-muted)] italic">
             No messages yet — this is a cold start lead. Thread will populate as the workflow runs.
@@ -108,7 +110,6 @@ export default function ThreadPanel() {
             <Message key={m.id} msg={m} />
           ))
         )}
-        <div ref={bottomRef} />
       </div>
 
       {/* Compose */}

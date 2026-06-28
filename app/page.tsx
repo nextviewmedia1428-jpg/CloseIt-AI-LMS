@@ -7,6 +7,7 @@ import CalendarView from '@/components/Playground/CalendarView';
 import MeetingModal from '@/components/Playground/MeetingModal';
 import MorningBrief from '@/components/Playground/MorningBrief';
 import SimulationEnd from '@/components/Playground/SimulationEnd';
+import PlaygroundGate from '@/components/Playground/PlaygroundGate';
 import { CommunicationLayer } from '@/components/CommunicationLayer/CommunicationLayer';
 import { CTASection } from '@/components/CTASection';
 import { SignalBar } from '@/components/ui/SignalBar';
@@ -28,8 +29,8 @@ export default function Home() {
           <SignalBar className="h-0.5 mb-10 opacity-30" />
         </div>
 
-        {/* Playground fullscreen */}
-        <div className="h-screen flex flex-col overflow-hidden" style={{ backgroundColor: 'var(--bg)' }}>
+        {/* Playground — relative so PlaygroundGate can overlay it absolutely */}
+        <div className="relative h-screen flex flex-col overflow-hidden" style={{ backgroundColor: 'var(--bg)' }}>
           <Navbar />
           <div className="flex flex-1 min-h-0">
             <Sidebar />
@@ -40,6 +41,7 @@ export default function Home() {
           <MeetingModal />
           <MorningBrief />
           <SimulationEnd />
+          <PlaygroundGate />
         </div>
       </section>
 
