@@ -1,198 +1,421 @@
-@AGENTS.md
+# CloseIt — Project Specification & Implementation Record
 
-# CloseIt — Claude Code Context
-
-## What this project is
-
-A portfolio demo web app proving an AI-powered lead management and follow-up automation stack. Not a production CRM — built to win n8n automation freelance contracts on Upwork.
-
-**Live:** https://closeit-topaz.vercel.app
-**GitHub:** https://github.com/nextviewmedia1428-jpg/CloseIt-AI-LMS.git
-**Sprint:** Sprint 2 in progress (Upwork profile + first proposals)
+**Last updated:** 2026-06-28 (Sprint 1 complete - merged closeit + closeit2.0)
 
 ---
 
-## Architecture in one paragraph
+## 1. What This Project Is
 
-Next.js 14 App Router frontend on Vercel. Visitor actions (register lead, advance day, chat with agent) POST to server-side API routes that proxy to n8n webhooks on Hostinger. n8n does all AI work (OpenAI gpt-4o-mini). Google Sheets is a write-only audit log — the UI never reads from it. `MOCK_N8N=true` makes every route return deterministic fake data so the demo runs fully on Vercel without n8n.
+CloseIt is a **demo/portfolio web app** built to win freelance n8n automation contracts on Upwork. It proves that a full lead-gen automation stack (lead generation → AI scoring → follow-up sequencing → call scheduling → sales meeting workflow) can be built on n8n + OpenAI + Google Sheets.
 
----
+**Live URL:** https://closeit-topaz.vercel.app
 
-## Key files and what they own
+The app has three core sections:
+1. **Hero** — pitch the value proposition
+2. **Business Simulator** — interactive playground where visitors click "Next Day" to advance a simulated 12-day sequence. Each day fires n8n webhooks that generate leads, simulate replies, score threads by AI, and schedule discovery calls in real time.
+3. **Communication Layer + CTA** — show generated messages and final call-to-action
 
-| File | Owns |
-|---|---|
-| `lib/types.ts` | All shared types — Lead, ThreadMessage, OpenTask, Notification, Action, SimulatorState |
-| `lib/scoring.ts` | Weighted score formula. Budget tiers: <$500→3, $500–2000→6, >$2000→10. Intent: low/med/high→3/6/9. Timeline: ≤7d→10, ≤21d→6, >21d→3 |
-| `lib/demoScript.ts` | Local fallback story engine used when n8n is unreachable. `seeded(leadId, salt)` → 0–1 float. |
-| `store/simulatorStore.ts` | Zustand: day, leads, threadsByLead, tasks, notifications, actionsByDay. `nextDay()` calls n8n then applies `applyN8nResponse()`. Falls back to local mock if n8n unreachable. |
-| `app/api/simulate/next-day/route.ts` | Proxies to n8n WF2. Merges array responses (deduplicates by ID) if n8n fires multiple times. |
-| `app/api/agent/analyze/route.ts` | Exports `AgentAnalysis` interface. Mock branches on lead.status. WF5 proxy when `MOCK_N8N=false`. |
-| `components/Playground/PlaygroundShell.tsx` | Orchestrates the entire 3-column simulator layout. Contains NavBar, LeadSidebar, ThreadPanel, AgentActionsPanel, MomPanel. |
-| `components/Playground/SalesAgentChatPanel.tsx` | Auto-analyzes on lead selection, shows AgentAnalysis card + Q&A chat. |
-| `n8n-workflows/WF2-DOCUMENTATION.md` | Full WF2 specification — input shape, node-by-node logic, output contract. Read this before touching WF2. |
+**Nothing sends real messages.** All communication is simulated inside the thread view.
 
 ---
 
-## API routes
+## 2. Tech Stack
 
-| Route | n8n Workflow | Env var for path |
+| Layer | Technology | Notes |
 |---|---|---|
-| `POST /api/leads/register` | WF1 | `N8N_WEBHOOK_REGISTER_LEAD` |
-| `POST /api/simulate/next-day` | WF2 | `N8N_WEBHOOK_NEXT_DAY` |
-| `POST /api/chat/query` | WF4 | `N8N_WEBHOOK_CHAT_QUERY` |
-| `POST /api/agent/analyze` | WF5 | `N8N_WEBHOOK_AGENT_ANALYZE` |
-
-Secret header on all requests: `x-webhook-secret: closeit_secret_2026`
+| Frontend | Next.js 16.2.9 (App Router), TypeScript | Single page at `/` with sections |
+| Styling | Tailwind CSS 4 + CSS variables | 7-colour design system |
+| State | Zustand | Single in-memory store, no persistence |
+| AI | OpenAI gpt-4o-mini | Called only from n8n, never from Next.js |
+| Automation | n8n self-hosted on Hostinger | Two active workflows |
+| Database | Google Sheets | Audit log only |
+| Hosting | Vercel | Deployed from GitHub |
+| Auth | None | Single public demo |
 
 ---
 
-## Core data types (current — from lib/types.ts)
+## 3. Architecture
 
-```ts
-type LeadStatus =
-  'New' | 'Contacted' | 'Awaiting Reply' | 'Replied' |
-  'Discovery Booked' | 'Nurture' | 'Closed Won' | 'Closed Lost'
+```
+Single-page app (Hero → Playground → Communications → CTA)
+    ↓
+Next.js API route /api/simulate/next-day
+    ↓
+n8n webhook (Hostinger)
+    ├── closeit/next-day (CloseIt ON — full AI)
+    └── closeit/next-day-manual (CloseIt OFF — manual mode)
+    ↓
+Google Sheets (audit trail only)
+```
 
+**Key decision:** Frontend reads only the **synchronous JSON webhook response**. Google Sheets is a backstage audit trail for credibility, not a data source.
+
+---
+
+## 4. Data Models (`lib/types.ts`)
+
+### Lead
+
+```typescript
 interface Lead {
-  id: string                    // "n8n_lead_d{day}_{i}"
-  name, email, company, industry: string
-  startType: 'cold' | 'warm'
-  inboundMessage?: string       // warm leads only
-  intentSignal: 'low' | 'medium' | 'high'
-  score: number                 // 0–10, starts at 6
-  scoreDelta: number
-  status: LeadStatus
-  registeredOnDay: number
-  replyFrequencyDays: number    // 2–3
-  discoveryCallDay: number | null
-  agentFollowUpCount: number    // max 6 before lead → Nurture
-  lastAgentFollowUpDay: number | null
-  agentNudgeCount: number
-  lastAgentNudgeDay: number | null
+  lead_id: string;
+  name: string;
+  company: string;
+  industry: string;
+  email: string;
+  startType: 'cold' | 'warm';
+  replyFrequencyDays: number;
+  inboundMessage: string | null;
+  // Populated after scoring:
+  classification?: 'Hot' | 'Warm' | 'Cold';
+  final_score?: number;      // 0–10
+  intent_score?: number;
+  recency_score?: number;
+  rationale?: string | null;
+  callScheduled?: 'Y' | 'N';
+  callDay?: string | null;   // "Day 7"
 }
+```
 
+### ThreadMessage
+
+```typescript
 interface ThreadMessage {
-  id: string
-  day: number
-  from: 'agent' | 'lead' | 'user'
-  body: string
-  timestamp: string
+  id: string;
+  day: number;
+  from: string;  // lead name, 'Agent', or 'User'
+  body: string;
+  timestamp: string;
 }
+```
 
-interface OpenTask {
-  leadId: string
-  leadName, company: string
-  callDay: number
-  status: 'pending' | 'completed'
-  mom?: string
-  momFollowUpSent?: boolean     // false after MoM saved, true after post-MoM email sent
-}
+### ScheduledCall
 
-type Notification = {
-  id, message: string
-  day: number
-  type: 'lead_arrived' | 'score_critical' | 'call_booked' | 'closed_won' | 'closed_lost' | 'lead_replied'
-  read: boolean
+```typescript
+interface ScheduledCall {
+  lead_id: string;
+  lead_name: string;
+  company: string;
+  callDay: number;
+  callDayLabel: string;
+  scheduledOnDay: number;
+  bossSummary?: string;   // AI-generated thread summary
+  completed?: boolean;
 }
 ```
 
 ---
 
-## Design system
+## 5. Simulator Lifecycle
 
-Colors defined in `app/globals.css` as `@theme inline` CSS variables:
-- `paper` #FAF7F2 — background
-- `ink` #221F1A — text
-- `ember` #FF5A36 — Hot leads, hero accent, user nudges
-- `amber` #FFB627 — Warm leads, open tasks
-- `glacier` #3E7CB1 — Cold leads
-- `signal` #2F9E44 — success / system actions / agent emails
-- `pulse` #7C5CFF — AI-generated content (scores, drafts, agent panel)
+### Constants
 
-Use as Tailwind classes: `bg-pulse`, `text-ember`, `border-glacier/20`, etc.
-
----
-
-## Non-obvious constraints
-
-- **`z.coerce.number()` breaks react-hook-form** — budget and timeline form fields use `z.string()` and are converted with `Number()` in `onSubmit`.
-- **OpenAI key never in any file** — workflow JSONs contain `PASTE_YOUR_OPENAI_KEY_HERE`. Keep it that way.
-- **n8n Merge node v3 only accepts 2 inputs** — use sequential chaining, not parallel branches feeding into a Merge node.
-- **All OpenAI HTTP nodes use Code+Raw pattern** — Code node builds `JSON.stringify(body)`, HTTP node uses `specifyBody: raw`, `rawBody: ={{ $json.body }}`. Do not use JSON body mode.
-- **Respond node** — use `={{ $('Node Name').first().json }}` directly, no `JSON.stringify()` wrapper.
-- **applyN8nResponse status merge is priority-based** — `Discovery Booked(5) > Replied(4) > Awaiting Reply(3) > Contacted(2) > New(1)`. Higher priority wins per leadId.
-- **Thread message IDs** assigned by frontend as `n8n_{leadId}_{day}_{from}_{idx}`.
-- **Google Sheets spreadsheet ID:** `12jrapE2Qnmvb9DbVDnLVuAwnzgQOUnWEq9ESrOhXcdQ`
-- **n8n base URL:** `https://n8n.srv1348908.hstgr.cloud`
-- **next-day route merges array responses** — if n8n fires multiple times (rapid clicks), `route.ts` deduplicates by ID across all items before returning to the store.
-
----
-
-## n8n workflows
-
-| File | Webhook | Status | Does |
-|---|---|---|---|
-| WF1-lead-capture.json | `/closeit/register-lead` | ✅ Built | Capture, dedup by email, AI score |
-| WF2-next-day-v2.json | `/closeit/next-day` | 🔴 Needs rebuild | Day engine — see WF2-DOCUMENTATION.md |
-| WF4-sales-agent.json | `/closeit/chat-query` | ✅ Built | Q&A on lead thread |
-| WF5-follow-up-agent.json | `/closeit/agent-analyze` | ✅ Built | Autonomous: who has the ball + draft message |
-
-**WF2 is being rebuilt manually.** Full specification in `n8n-workflows/WF2-DOCUMENTATION.md`.
-
----
-
-## Playground layout (3 columns)
-
-```
-┌─────────────────┬──────────────────────────┬──────────────────┐
-│  Lead Sidebar   │      Thread Panel        │  Right Panel     │
-│  (w-[248px])    │      (flex-1)            │  (w-[272px])     │
-│                 │                          │                  │
-│  Lead cards     │  Selected lead thread    │  Agent actions   │
-│  sorted by      │  + compose box           │  (h-40, scroll)  │
-│  score desc     │  + MoM task banner       │                  │
-│                 │                          │  User nudges     │
-│                 │                          │  (h-40, scroll)  │
-│                 │                          │                  │
-│                 │                          │  Open tasks      │
-│                 │                          │                  │
-│                 │                          │  Session stats   │
-└─────────────────┴──────────────────────────┴──────────────────┘
+```typescript
+SIMULATION_MAX_DAYS = 12     // User can advance up to 12 days
+SIMULATION_MAX_SECONDS = 1800 // 30 minutes wall-clock time
 ```
 
-**User nudges panel** shows today's `lead_replied` notifications — fires every day when a Discovery Booked lead has replied and user hasn't responded.
+### Timer
+
+- Starts on first "Next Day" click
+- Counts down from 30:00
+- When `secondsLeft === 0`: simulation ends, final score is computed
+
+### Day cap
+
+- After `handleNextDay` receives response: if `newDay >= 12` → `endSimulation(score)`
+
+### Lead cap
+
+- Checked in n8n `Prepare Lead Gen Prompt`: if `totalLeads >= 30`, returns trivial prompt (no malformed OpenAI request)
+
+### Meeting gate
+
+- When pending calls exist for today: "Next Day" button replaced by "📞 Complete Meetings"
+- MeetingModal must be completed before day can advance
 
 ---
 
-## Agent behaviour (pre vs post discovery)
+## 6. Zustand Store (`store/simulatorStore.ts`)
 
-**Pre-discovery (agent fully autonomous):**
-- Sends initial outreach email (cold) or responds to inbound (warm)
-- Auto-replies to lead messages next day (direct answer, no booking pitch)
-- Sends follow-up emails every 2+ days when lead goes quiet (max 6)
-- Pitches discovery call naturally after 2–3 message rounds
+### State shape
 
-**Post-discovery (user takes over):**
-- Agent does NOT auto-reply to leads
-- User nudge fires every day until user responds (no day gate)
-- Agent sends email to lead if user/agent has been quiet ≥ 2 days
-- After user enters MoM → agent sends post-call follow-up email once
+```typescript
+{
+  day: number;
+  leads: Lead[];
+  threads: Record<lead_id, ThreadMessage[]>;
+  config: SimulatorConfig;
+  selectedLeadId: string | null;
+  closeItEnabled: boolean;        // ON = AI replies, OFF = manual
+  reminders: UserReminder[];
+  userMessages: UserMessage[];
+  scheduledCalls: ScheduledCall[];
+  selectedCalendarDay: number | null;
+  meetingModalDay: number | null;
+  morningBrief: MorningBriefData | null;
+  timerStartedAt: number | null;  // Date.now() on first Next Day
+  simulationEnded: boolean;
+  endScore: EndScore | null;
+}
+```
+
+### Key actions
+
+- `addLeads(newLeads, newThreads)` — merges by `lead_id`
+- `addThreadMessage(leadId, msg)` — appends message to thread
+- `toggleCloseIt()` — switches between AI and manual mode
+- `markCallCompleted(leadId)` — marks call done
+- `endSimulation(score)` — triggers final screen
+- `resetSimulation()` — back to Day 0
 
 ---
 
-## Status
+## 7. Playground Layout (3 columns)
+
+```
+┌──────────────┬─────────────────────────┬──────────────┐
+│   Sidebar    │   ThreadPanel           │   RightPanel │
+│ (lead list)  │ (active thread + compose)│ (stats/calls)│
+└──────────────┴─────────────────────────┴──────────────┘
+```
+
+**Navbar** — Day counter (X/12), 30-min timer, "Next Day" button, CloseIt toggle, notifications bell.
+
+**Sidebar** — Lead cards, sorted by classification (Hot/Warm/Cold), selected state highlighted in violet.
+
+**ThreadPanel** — Messages from agent, user, and leads; compose textarea (`Enter` to send, `Shift+Enter` for newlines).
+
+**RightPanel** — Three sections:
+- Agent Actions (what the AI did yesterday)
+- Action Required (manual tasks if CloseIt OFF, or boss messages if CloseIt ON)
+- Stats (leads, calls, user/agent action count)
+
+**CalendarView** — Horizontal strip showing call days.
+
+**MeetingModal** — Tabbed by lead; complete calls before advancing day.
+
+**MorningBrief** — Summary after each successful day advance.
+
+**SimulationEnd** — Final score screen with grade.
+
+---
+
+## 8. CloseIt ON vs OFF Mode
+
+### CloseIt ON (full AI)
+
+- Agent generates replies (simulating lead responses per n8n prompt rules)
+- Agent sends follow-ups every 2+ days when lead goes quiet
+- Agent proposes meeting days
+- `userMessages` shows AI-drafted nudges for the user
+
+### CloseIt OFF (manual mode)
+
+- Only lead replies are simulated; no agent follow-ups generated
+- Sidebar shows `useManualActionGroups()` — a client-side breakdown of what the user needs to do manually
+- `userMessages` is empty; user sees their own action requirements
+
+---
+
+## 9. API Route (`app/api/simulate/next-day/route.ts`)
+
+```typescript
+POST /api/simulate/next-day
+
+Body:
+{
+  "day": number,
+  "leads": Lead[],
+  "threads": Record<lead_id, ThreadMessage[]>,
+  "closeItEnabled": boolean,
+  "totalLeads": number,
+  ...other state
+}
+
+Response:
+{
+  "day": number,
+  "leads": Lead[],
+  "threads": Record<lead_id, ThreadMessage[]>,
+  "userMessages": UserMessage[],
+  "scheduledCalls": ScheduledCall[]
+}
+```
+
+The route routes to the correct n8n webhook based on `closeItEnabled` (secret stripped before forwarding to n8n).
+
+---
+
+## 10. n8n Workflows
+
+| File | Webhook | Mode |
+|---|---|---|
+| `My workflow.json` | `closeit/next-day` | CloseIt ON (full AI) |
+| `My workflow 5.json` | `closeit/next-day-manual` | CloseIt OFF (manual only) |
+
+Base URL: `https://n8n.srv1348908.hstgr.cloud/webhook`
+
+Both workflows:
+1. Generate 1–3 new leads per day
+2. Simulate lead replies (if they're ready to respond)
+3. Rate threads by AI (score, classification, call scheduling decision)
+4. Generate follow-ups / nudges (ON only)
+5. Return JSON to Next.js
+
+---
+
+## 11. Design System
+
+**Colors** — defined in `app/globals.css` as CSS variables:
+
+- `--bg` #FAF7F2 — page background (Paper)
+- `--text` #221F1A — primary text (Ink)
+- `--ember` #FF5A36 — Hot leads, danger, alerts
+- `--amber` #FFB627 — Warm leads, caution
+- `--glacier` #3E7CB1 — Cold leads
+- `--signal` #2F9E44 — success, user actions (green)
+- `--pulse` #7C5CFF — AI-generated, selected state (violet)
+
+Each colour has `-soft` (background tint) and `-border` variants.
+
+**Typography:**
+
+- Display: Space Grotesk (`font-display`)
+- Body: Inter (default `font-sans`)
+- Mono: IBM Plex Mono (`font-mono`)
+
+**Signature element:** Signal Bar gradient (Ember → Amber → Glacier), used in Hero section.
+
+---
+
+## 12. File Structure
+
+```
+app/
+  globals.css                   CSS variables + Tailwind directives
+  layout.tsx                    Root layout, font imports
+  page.tsx                      Hero → Playground section → Communications → CTA
+  api/simulate/next-day/route.ts  Server proxy to n8n
+
+components/
+  Hero.tsx                      Hero pitch section
+  Playground/
+    Navbar.tsx                  Day counter, timer, Next Day button
+    Sidebar.tsx                 Lead list with badges
+    ThreadPanel.tsx             Active lead thread + compose
+    RightPanel.tsx              Stats, agent actions, action required
+    CalendarView.tsx            Horizontal call calendar
+    MeetingModal.tsx            Tabbed call completion
+    MorningBrief.tsx            Post-day summary
+    SimulationEnd.tsx           Final score screen
+  CommunicationLayer/
+    CommunicationLayer.tsx      Message preview cards
+    ChannelPreviewCard.tsx      Individual channel card
+  CTASection.tsx                Final CTA section
+  ui/
+    Badge.tsx                   Classification, score badges
+    SignalBar.tsx               Gradient bar component
+    Modal.tsx                   Shared modal primitive
+
+lib/
+  types.ts                      TypeScript interfaces
+  demoScript.ts                 (Empty — data from n8n)
+
+store/
+  simulatorStore.ts             Zustand store (in-memory, no persistence)
+```
+
+---
+
+## 13. Environment Variables
+
+`.env.local`:
+```
+N8N_BASE_URL=https://n8n.srv1348908.hstgr.cloud/webhook
+N8N_WEBHOOK_NEXT_DAY=/closeit/next-day
+N8N_WEBHOOK_NEXT_DAY_MANUAL=/closeit/next-day-manual
+N8N_WEBHOOK_SECRET=closeit_secret_2026
+```
+
+The secret is checked by n8n on every webhook call.
+
+---
+
+## 14. Deployment
+
+**Vercel:**
+- Project: closeit-topaz
+- Repo: GitHub (nextviewmedia1428-jpg)
+- Branch: main
+- Auto-deployed on push
+
+**n8n:**
+- Hostinger self-hosted
+- Base URL: `https://n8n.srv1348908.hstgr.cloud`
+- Workflows updated manually via n8n UI
+
+---
+
+## 15. Session-Only State (No Persistence)
+
+All data lives in Zustand in-memory. On page reload:
+- Everything resets to Day 0
+- No localStorage, no cookies for simulator state
+- Google Sheets audit log survives (n8n-side only)
+- This is intentional: each visitor gets a fresh simulation
+
+---
+
+## 16. Status
 
 | Component | Status |
 |---|---|
 | Frontend (all sections) | ✅ Complete |
-| Lead scoring (in-browser) | ✅ Complete |
-| Local fallback story engine | ✅ Complete |
-| Sales Agent panel | ✅ Complete |
-| WF1 Lead Capture | ✅ Complete |
-| WF2 Next Day Engine | 🔴 Needs manual rebuild in n8n |
-| WF4 Sales Agent | ✅ Complete |
-| WF5 Follow-up Agent | ✅ Complete |
+| Playground (merged from closeit2.0) | ✅ Complete |
+| Design system (closeit branding) | ✅ Complete |
+| Store (12-day cap) | ✅ Complete |
+| API route | ✅ Complete |
 | Vercel deployment | ✅ Live |
-| n8n live mode (`MOCK_N8N=false`) | ⬜ Pending WF2 rebuild |
-| Loom demo video | 🟡 Clips built, ElevenLabs audio pending |
+| n8n workflows | ✅ Working |
+| Loom demo video | 🟡 Pending |
+
+---
+
+## 17. Known Gaps / Open Items
+
+- ~~Playground layout~~ ✅ Merged
+- ~~Design system integration~~ ✅ Integrated
+- Config panel (scoring weights) — currently hardcoded, not user-editable in UI
+- localStorage persistence — intentionally skipped (session-only by design)
+- Error handling for n8n timeouts — falls back to store state
+- Loom demo video — to be recorded
+
+---
+
+## 18. How to Run Locally
+
+```bash
+npm install
+npm run dev
+# Open http://localhost:3000
+```
+
+The app will try to hit n8n on the first "Next Day" click. If n8n is down, falls back to mock responses.
+
+---
+
+## 19. How to Deploy to Vercel
+
+```bash
+git add .
+git commit -m "Merge closeit2.0 playground into closeit UI"
+git push origin main
+# Vercel auto-deploys
+```
+
+View live: https://closeit-topaz.vercel.app
+
+---
+
+*Merged by Claude Code on 2026-06-28. closeit (Hero/CTA/CommsLayer) + closeit2.0 (Playground). Session-only state, 12-day simulator cap, OpenAI-powered n8n workflows.*

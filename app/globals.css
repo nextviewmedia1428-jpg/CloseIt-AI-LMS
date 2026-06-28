@@ -1,24 +1,48 @@
-@import "tailwindcss";
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
 
-@theme inline {
-  --color-paper: #FAF7F2;
-  --color-ink: #221F1A;
-  --color-ember: #FF5A36;
-  --color-amber: #FFB627;
-  --color-glacier: #3E7CB1;
-  --color-signal: #2F9E44;
-  --color-pulse: #7C5CFF;
-
-  --font-display: var(--font-display);
-  --font-body: var(--font-body);
-  --font-mono: var(--font-mono);
+:root {
+  --bg: #FAF7F2;
+  --surface: #F0EDE6;
+  --surface-2: #F5F2EC;
+  --surface-3: #EAE6DE;
+  --border: rgba(34,31,26,0.09);
+  --border-soft: rgba(34,31,26,0.06);
+  --border-med: rgba(34,31,26,0.13);
+  --text: #221F1A;
+  --text-secondary: #5C5751;
+  --text-muted: #9A958F;
+  --pulse: #7C5CFF;
+  --pulse-soft: rgba(124,92,255,0.10);
+  --pulse-border: rgba(124,92,255,0.25);
+  --amber: #FFB627;
+  --amber-soft: rgba(255,182,39,0.12);
+  --amber-border: rgba(255,182,39,0.35);
+  --signal: #2F9E44;
+  --signal-soft: rgba(47,158,68,0.12);
+  --ember: #FF5A36;
+  --ember-soft: rgba(255,90,54,0.10);
+  --ember-border: rgba(255,90,54,0.30);
+  --glacier: #3E7CB1;
+  --glacier-soft: rgba(62,124,177,0.10);
 }
+
+* { box-sizing: border-box; }
 
 body {
-  background: #FAF7F2;
-  color: #221F1A;
-  font-family: var(--font-body), system-ui, sans-serif;
+  font-family: 'Inter', -apple-system, BlinkMacSystemFont, sans-serif;
+  background: var(--bg);
+  color: var(--text);
 }
 
-.font-display { font-family: var(--font-display), system-ui, sans-serif; }
-.font-mono { font-family: var(--font-mono), monospace; }
+.font-display { font-family: 'Space Grotesk', sans-serif; }
+.font-mono { font-family: 'IBM Plex Mono', ui-monospace, monospace; }
+
+.signal-bar {
+  background: linear-gradient(90deg, #FF5A36 0%, #FFB627 50%, #3E7CB1 100%);
+}
+
+::-webkit-scrollbar { width: 4px; }
+::-webkit-scrollbar-track { background: transparent; }
+::-webkit-scrollbar-thumb { background: var(--border-med); border-radius: 2px; }
