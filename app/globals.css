@@ -1,7 +1,21 @@
-@tailwind base;
-@tailwind components;
-@tailwind utilities;
+@import "tailwindcss";
 
+/* Tailwind v4 theme — registers bg-paper, text-ink, bg-ember etc. as utility classes */
+@theme inline {
+  --color-paper: #FAF7F2;
+  --color-ink: #221F1A;
+  --color-ember: #FF5A36;
+  --color-amber: #FFB627;
+  --color-glacier: #3E7CB1;
+  --color-signal: #2F9E44;
+  --color-pulse: #7C5CFF;
+
+  --font-display: var(--font-display);
+  --font-body: var(--font-body);
+  --font-mono: var(--font-mono);
+}
+
+/* CSS variables for Playground components (use var(--bg), var(--ember) etc.) */
 :root {
   --bg: #FAF7F2;
   --surface: #F0EDE6;
@@ -31,13 +45,13 @@
 * { box-sizing: border-box; }
 
 body {
-  font-family: 'Inter', -apple-system, BlinkMacSystemFont, sans-serif;
-  background: var(--bg);
-  color: var(--text);
+  background: #FAF7F2;
+  color: #221F1A;
+  font-family: var(--font-body), system-ui, sans-serif;
 }
 
-.font-display { font-family: 'Space Grotesk', sans-serif; }
-.font-mono { font-family: 'IBM Plex Mono', ui-monospace, monospace; }
+.font-display { font-family: var(--font-display), system-ui, sans-serif; }
+.font-mono { font-family: var(--font-mono), monospace; }
 
 .signal-bar {
   background: linear-gradient(90deg, #FF5A36 0%, #FFB627 50%, #3E7CB1 100%);
